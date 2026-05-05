@@ -6,3 +6,4 @@ log.txt
 *.mp3
 *.wav
 out*.txt
+compile_commands.json

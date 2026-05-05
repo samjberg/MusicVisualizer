@@ -13,12 +13,70 @@
 
 using namespace std;
 
+template<typename numT>
+inline numT from_bin(string binstr) {
+    auto it = binstr.end() - 1;
+    uint64_t len = binstr.size();
+    numT result = 0;
+    for (int32_t i=len-1; i>=0; --i) {
+        int32_t idx = len - i - 1;
+        if (binstr[i] == '1') {
+            result += pow(2, idx);
+        }
+    }
+    return result;
+}
+
+
+template<typename numT>
+inline string to_bin(numT num) {
+    string bitstr;
+    vector<char> stack;
+    while (num >= 1) {
+        int32_t digit = num % 2;
+        stack.push_back(to_string(digit)[0]);
+        num >>= 1;
+    }
+    while (stack.size() > 0) {
+        bitstr += stack.back();
+        stack.pop_back();
+    }
+    return bitstr;
+}
+
+
+
+template<typename numT>
+inline string to_reversed_bin(numT num) {
+    string bitstr;
+    while (num >= 1) {
+        int32_t digit = num % 2;
+        bitstr += to_string(digit);
+        num >>= 1;
+    }
+    return bitstr;
+}
+
+
+
+inline int32_t get_bitreversed_index(int32_t idx) {
+    string rev_binstr = to_reversed_bin(idx);
+    return from_bin<int32_t>(rev_binstr);
+}
+
 
 int main(int argc, char** argv) {
     cout << "WHAT IS EVEN HAPPENING!?!?!?!?!" << endl;
 
     string s1 = "hello there";
     string s2 = "james taylor";
+
+    int x = 6;
+    string bsx = to_bin(x);
+    int ridx = get_bitreversed_index(x);
+    cout << x << endl << bsx << endl;
+    cout << ridx << endl;
+    return 0;
 
 
     const char *cstr1 = s1.c_str();
