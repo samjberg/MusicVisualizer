@@ -3,7 +3,7 @@
 
 #include <cstdint>
 #include <vector>
-#include <stringtools.h>
+#include <fstream>
 
 
 template <typename numT>

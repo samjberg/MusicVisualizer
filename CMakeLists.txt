@@ -19,11 +19,11 @@ add_executable(music_visualizer music_visualizer_main.cpp)
 target_compile_features(music_visualizer PRIVATE cxx_std_20)
 
 
-add_executable(wavreader2 wavreader2.cpp)
-target_compile_features(wavreader2 PRIVATE cxx_std_20)
+add_executable(wavreader wavreader.cpp)
+target_compile_features(wavreader PRIVATE cxx_std_20)
 
-add_executable(test_runner test.cpp)
-target_compile_features(test_runner PRIVATE cxx_std_20)
+# add_executable(test_runner test.cpp)
+# target_compile_features(test_runner PRIVATE cxx_std_20)
 
 
 

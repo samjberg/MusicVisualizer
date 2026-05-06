@@ -3,7 +3,7 @@
 #include <string.h>
 #include <stringtools.h>
 #include "frame.h"
-
+#include "barsdisplay.h"
 
 
 // inline std::string reverse_str(std::string str) {
@@ -66,6 +66,26 @@ inline int32_t get_bitreversed_index(int32_t idx) {
 
 
 int main(int argc, char** argv) {
+    vector<double> lst21 = vector<double>(10, 5.0);
+    for (double d : lst21) {
+        cout << d << endl;
+    }
+    cout << lst21.size() << endl;
+    return 0;
+
+    Pos p1{5, 2};
+    cout << p1.x << ", " << p1.y << endl;
+    cout << p1 << endl;
+
+    Pos p2 = {5, 2};
+    if (p1 == p2) {
+        cout << "Equality works for structs with basic types" << endl;
+    }
+    return 0;
+
+
+
+    
     cout << "WHAT IS EVEN HAPPENING!?!?!?!?!" << endl;
 
     string s1 = "hello there";

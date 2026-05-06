@@ -37,11 +37,11 @@ class AudioStream {
     public:
         uint64_t data_size;
         uint64_t num_channels, sample_rate, byte_rate, block_align, bits_per_sample;
-        uint64_t bytes_per_sample, bits_per_frame, bytes_per_frame;
+        uint64_t bytes_per_sample, bits_per_frame, bytes_per_frame, frames_per_chunk;
         uint64_t chunk_size; //This is the size of a streaming chunk.  NOT an actual wav chunk, like header, fmt, list, data.
-        uint64_t pos;        //It represents the size in bytes to be read for each "frame"/update of the visualizer display.
+                             //It represents the size in bytes to be read for each "frame"/update of the visualizer display.
                              //It is these chunks that will get fed into the fft
-        AudioStream(fs::path path, uint64_t chunk_size) : chunk_size(chunk_size) {
+        AudioStream(fs::path path, uint64_t frames_per_chunk) : frames_per_chunk(frames_per_chunk) {
             file = ifstream(path, ios_base::binary);
             WaveHeader header = read_header();
             Chunk fmt = read_fmt_chunk();
@@ -53,15 +53,19 @@ class AudioStream {
             bytes_per_sample = bits_per_sample / 8;
             bits_per_frame = bits_per_sample * num_channels;
             bytes_per_frame = bits_per_frame / 8;
+            chunk_size = frames_per_chunk * bytes_per_frame;
             data_size = ff_to_data();
-            pos = file.tellg();
 
             cout << "data_size: " << data_size << endl;
             cout << "bytes_per_sample: " << bytes_per_sample << endl;
             cout << "block_align: " << block_align << endl;
-
-
+            cout << "frames_per_chunk: " << frames_per_chunk << endl;
+            cout << "chunk_size: " << chunk_size << endl;
         }
+
+        AudioStream() {}
+
+
         ~AudioStream() {
             if (file.is_open()) {
                 file.close();
@@ -93,11 +97,11 @@ class AudioStream {
         double read_as_normalized_double() {
             if (bits_per_sample == 16) {
                 int16_t val = next_n_bytes_sizet<int16_t>(2);
-                return static_cast<double>(val) / 32786.0;
+                return static_cast<double>(val) / 32786.0; //32786 is 2^16 / 2
             }
             else if (bits_per_sample == 24) {
                 int32_t val = next_n_bytes_sizet<int32_t>(3);
-                return static_cast<double>(val) / 8388608.0;
+                return static_cast<double>(val) / 8388608.0; //8388608 is 2^24 / 2
             }
             return 0.0;
         }
@@ -165,7 +169,7 @@ class AudioStream {
 
 
         vector<Frame> read_next_chunk() {
-            uint64_t frames_per_chunk = chunk_size / bytes_per_frame;
+            // uint64_t frames_per_chunk = chunk_size / bytes_per_frame;
             uint64_t bytes_read = 0;
             vector<Frame> frames(frames_per_chunk);
             int i = 0;
@@ -175,6 +179,10 @@ class AudioStream {
                 i++;
             }
             return frames;
+        }
+
+        int64_t pos() {
+            return file.tellg();
         }
 
 
