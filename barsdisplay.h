@@ -46,6 +46,15 @@ struct ScreenInfo {
 };
 
 
+inline std::vector<Bar> create_bars(std::vector<float>& heights) {
+    std::vector<Bar> bars(heights.size());
+    for (int i=0; i<heights.size(); ++i) {
+        bars[i] = Bar{heights[i]};
+    }
+    return bars;
+}
+
+
 class BarsDisplay {
     public:
         int32_t count;

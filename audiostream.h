@@ -33,18 +33,30 @@ struct Chunk {
 };
 
 
+// inline float* chunk_to_float32_buff(std::vector<Frame> chunk) {
+//     float* buff = new float[chunk.size()];
+//     for (int i = 0; i < chunk.size(); ++i) {
+//         float val = 0.0;
+//         for (int c=0; c<chunk[i].num_channels; ++c) {
+//             val += chunk[i].channels[c];
+//         }
+//         buff[i] = val / chunk[i].num_channels;
+//     }
+//     return buff;
+// }
+
 inline float* chunk_to_float32_buff(std::vector<Frame> chunk) {
-    float* buff = new float[chunk.size()];
+    float* buff = new float[chunk.size() * chunk[0].num_channels];
+    int count = 0;
     for (int i = 0; i < chunk.size(); ++i) {
         float val = 0.0;
         for (int c=0; c<chunk[i].num_channels; ++c) {
-            val += chunk[i].channels[c];
+            buff[count] = chunk[i].channels[c];
+            count++;
         }
-        buff[i] = val / chunk[i].num_channels;
     }
     return buff;
 }
-
 
 class AudioStream {
     public:
@@ -178,33 +190,34 @@ class AudioStream {
                 vals[i] = read_as_normalized_double();
             }
             Frame frame(num_channels, vals);
+            stored_frames.push_back(frame);
             return frame;
         }
 
 
+
         vector<Frame> read_next_chunk() {
             // uint64_t frames_per_chunk = chunk_size / bytes_per_frame;
-            uint64_t bytes_read = 0;
             vector<Frame> frames(frames_per_chunk);
-            int i = 0;
-            while (i < frames_per_chunk) {
+            // while (i < frames_per_chunk) {
+            for (int i=0; i<frames_per_chunk; i++) {
                 frames[i] = next_frame();
-                stored_frames.push_back(frames[i]);
-                bytes_read += bytes_per_frame;
-                i++;
             }
             return frames;
         }
 
-
         vector<Frame> get_chunk_centered_at(uint64_t idx) {
-            cout << "BEGINNING OF GET_CHUNK_CENTERED_AT" << endl;
-            int start_idx = max(int(idx - (chunk_size / 2)), 0);
-            vector<Frame> chunk(chunk_size);
-            for (int i=start_idx; i<start_idx + chunk_size; ++i) {
+            int start_idx = max(int(idx - (frames_per_chunk / 2)), 0);
+            int end_idx = start_idx + frames_per_chunk;
+            cout << "chunk centered at: " << idx << " starts at: " << start_idx << " and ends at: " << end_idx << endl;
+            vector<Frame> chunk(frames_per_chunk);
+            for (int i=start_idx; i<end_idx; ++i) {
                 chunk[i-start_idx] = stored_frames[i];
             }
-            cout << "END OF GET_CHUNK_CENTERED_AT" << endl;
+            // for (int i=0; i<chunk_size; ++i) {
+            //     int idx = i + chunk_size;
+            //     chunk[i] = stored_frames[idx];
+            // }
             return chunk;
         }
 

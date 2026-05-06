@@ -18,6 +18,7 @@
 #include "SDL3/SDL_render.h"
 #include <SDL3/SDL_audio.h>
 #include "audiostream.h"
+#include <complex>
 #include <SDL3/SDL_rect.h>
 #include <filesystem>
 #define SDL_MAIN_USE_CALLBACKS 1  /* use the callbacks instead of main() */
@@ -35,11 +36,16 @@ static double global_max = 0.01;
 int actual_screen_width = 0;
 int actual_screen_height = 0;
 
+fs::path fpath = "/Users/sjber/Coding/C++/SDL_Projects/MusicVisualizer/cliffsofdover.wav";
+// fs::path fpath = "/Users/sjber/Coding/C++/SDL_Projects/MusicVisualizer/footstepswav.wav";
+BarsDisplay bd;
+AudioStream audio_stream(fpath, 4096);
+SDL_AudioStream* sdl_audio_stream;
 
 //Global variables for keeping track of the current playhead
 uint64_t total_frames_sent = 0; //total number of frames SENT to the audio device (not necessarily played yet)
-uint64_t queued_bytes = 0;
-uint64_t queued_frames = 0;
+uint64_t last_update_pos = 0;
+uint64_t current_playhead = 0;
 
 namespace fs = std::filesystem;
 
@@ -202,7 +208,10 @@ vector<double> fft_chunk_to_power_chunk(vector<Frame> chunk) {
 }
 
 vector<double> fft_chunk_to_binned_power(vector<Frame> chunk, uint64_t num_bins=64) {
+    cout << "size of chunk (beginning): " << chunk.size();
     vector<double> powers = fft_chunk_to_power_chunk(chunk);
+    cout << "size of powers chunk (end): " << powers.size() << endl;
+    cout << "audio_stream.chunk_size: " << audio_stream.chunk_size << endl;
     return create_bins(powers, num_bins);
 }
 
@@ -218,11 +227,6 @@ double max_chunk_power(vector<complex<double>> chunk) {
 }
 
 
-// fs::path fpath = "/Users/sjber/Coding/C++/SDL_Projects/MusicVisualizer/cliffsofdover.wav";
-fs::path fpath = "/Users/sjber/Coding/C++/SDL_Projects/MusicVisualizer/footstepswav.wav";
-BarsDisplay bd;
-AudioStream audio_stream("/Users/sjber/Coding/C++/SDL_Projects/MusicVisualizer/cliffsofdover.wav", 2048);
-SDL_AudioStream* sdl_audio_stream;
 
 Size get_screen_size() {
     int w, h;
@@ -330,6 +334,7 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
 {
     if (event->type == SDL_EVENT_KEY_DOWN) {
         if (event->key.key == 'q') {
+            cout << "bytes_per_frame: " << audio_stream.bytes_per_frame;
             return SDL_APP_SUCCESS;
         }
         else if (event->key.key == 'd') {
@@ -376,23 +381,29 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     vector<Frame> chunk = audio_stream.read_next_chunk();
     float* buff = chunk_to_float32_buff(chunk);
-    SDL_PutAudioStreamData(sdl_audio_stream, buff, chunk.size() * sizeof(float));
+    SDL_PutAudioStreamData(sdl_audio_stream, buff, audio_stream.frames_per_chunk * sizeof(float) * audio_stream.num_channels);
     total_frames_sent += chunk.size();
-    queued_bytes = static_cast<uint64_t>(SDL_GetAudioStreamQueued(sdl_audio_stream));
-    queued_frames = queued_bytes / sizeof(Frame);
-    cout << "sizeof(Frame): " << sizeof(Frame) << endl;
+    uint64_t queued_bytes = static_cast<uint64_t>(SDL_GetAudioStreamQueued(sdl_audio_stream));
+    uint64_t queued_frames = queued_bytes / sizeof(Frame);
+    // cout << "sizeof(Frame): " << sizeof(Frame) << endl;
+    cout << "total_frames_sent: " << total_frames_sent << endl;
     cout << "queued_frames: " << queued_frames << endl;
-    uint64_t current_playhead = total_frames_sent - queued_frames;
-    vector<Frame> curr_chunk = audio_stream.get_chunk_centered_at(current_playhead);
-    vector<double> bins = fft_chunk_to_binned_power(curr_chunk);
-    double max_val = vecmax(bins);
-    if (max_val > global_max) {
-        global_max = max_val;
+    current_playhead = total_frames_sent - queued_frames;
+    cout << "current_playhead: " << current_playhead << endl;
+    if ((current_playhead - last_update_pos) >= audio_stream.frames_per_chunk) {
+        vector<Frame> curr_chunk = audio_stream.get_chunk_centered_at(current_playhead);
+        cout << "chunk centered at current_playhead: " << current_playhead << " has length: " << curr_chunk.size();
+        vector<double> bins = fft_chunk_to_binned_power(curr_chunk);
+        double max_val = vecmax(bins);
+        if (max_val > global_max) {
+            global_max = max_val;
+        }
+        else {
+            global_max *= 0.99f;
+        }
+        bd.update_heights(divide_vector(bins, global_max));
+        last_update_pos = current_playhead;
     }
-    else {
-        global_max *= 0.99f;
-    }
-    bd.update_heights(divide_vector(bins, max_val));
 
 
     //dev essentially represents the actual sound card device
