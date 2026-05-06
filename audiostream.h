@@ -173,7 +173,7 @@ class AudioStream {
             uint64_t bytes_read = 0;
             vector<Frame> frames(frames_per_chunk);
             int i = 0;
-            while ((i < frames_per_chunk) && (bytes_read < chunk_size)) {
+            while (i < frames_per_chunk) {
                 frames[i] = next_frame();
                 bytes_read += bytes_per_frame;
                 i++;

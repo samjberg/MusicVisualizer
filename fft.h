@@ -1,4 +1,4 @@
-#include <cstdlib>
+#include <cstdint>
 #include <iostream>
 // #include <numbers>
 #include <string>
@@ -168,10 +168,10 @@ inline vector<complex<double>> do_bit_reversal(vector<complex<double>>& lst) {
 
 
 
+//This function ONLY performs the actual cooley-turkey fft algorithm, it does NOTHING else
+//It does not create any bins, it just produces the raw output.
 inline vector<complex<double>> fft(vector<complex<double>>& a) {
     auto n = static_cast<double>(a.size());
-    int32_t ni = a.size();
-    int32_t log_n = static_cast<int32_t>(log2(n));
     // vector<complex<double>> A(ni);
     // for (int32_t i=0; i<ni; ++i) {
     //     int32_t j = reverse_bits<int32_t>(i, log_n); 
@@ -203,14 +203,15 @@ inline vector<complex<double>> fft(vector<complex<double>>& a) {
     return A;
 }
 
-// template<typename numT>
-// vector<numT> generate_random_vector(uint64_t len, numT mn, numT mx) {
-//     vector<numT> lst(len);
-//     for (int32_t i=0; i<len; ++i) {
-//         lst[i] = random(mn, mx);
-//     }
-//     return lst;
-// }
+inline double calculate_power(complex<double> c) {
+    return sqrt(pow(c.real(), 2.0) + pow(c.imag(), 2.0));
+}
+
+inline double calculate_decibels(complex<double> c) {
+    return 20 * log10(calculate_power(c));
+}
+
+
 
 inline vector<complex<double>> generate_random_vector(uint64_t len, double mn, double mx) {
     vector<complex<double>> lst(len);
@@ -222,55 +223,3 @@ inline vector<complex<double>> generate_random_vector(uint64_t len, double mn, d
     return lst;
 }
 
-// int32_t main(int32_t argc, char** argv) {
-//     uint64_t n = pow(2, 32);
-//     vector<complex<double>> lst = generate_random_vector(pow(2, 20), 0.0, n);
-//     // for (int32_t i=0; i<100; ++i) {
-//     //     cout << lst[i] << endl;
-//     // }
-//
-//     vector<complex<double>> res = fft(lst);
-//     for (int32_t i=0; i<res.size(); i++) {
-//         cout << res[i] << " ";
-//     }
-//     // for (int32_t 
-//
-//     // Range r{1, 2}
-//     return 0;
-//
-//     double a = 5.0;
-//     bitset<64> bs_a(a);
-//     // cout << bs_a << endl;
-//     // bitshift(&a, 1);
-//     uint64_t *b = (size_t*)&a;
-//     uint64_t c = (size_t)a;
-//     // cout << *b << endl;
-//     // cout << c << endl;
-//
-//     // return 0;
-//     // *b >>= 1;
-//     // b = (uint64_t*)&a;
-//     // cout << a << " " << *b << endl;
-//     // mybit_or<double>(&a, 8523413);
-//     // cout << a << " " << *b << endl;
-//
-//     string binstr = argv[1];
-//     uint64_t val = from_bin<size_t>(binstr);
-//     // cout << val << endl;
-//
-//     // return 0;
-//
-//
-//     uint64_t num1 = 523;
-//     uint64_t rnum1 = reverse_bits(num1);
-//
-//     complex<double> c1(52.232353232532211533259259324, 2332553295093.9325932582355126);
-//     cout << "c1: " << c1 << endl;
-//
-//     complex<double> rc1 = reverse_bits(c1);
-//     cout << "c1: " << c1 << endl << "rc1: " << rc1 << endl;
-//
-//
-//     return 0;
-//
-// }
