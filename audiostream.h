@@ -198,11 +198,13 @@ class AudioStream {
 
 
         vector<Frame> get_chunk_centered_at(uint64_t idx) {
-            int start_idx = idx - (chunk_size / 2);
+            cout << "BEGINNING OF GET_CHUNK_CENTERED_AT" << endl;
+            int start_idx = max(int(idx - (chunk_size / 2)), 0);
             vector<Frame> chunk(chunk_size);
-            for (int i=0; i<start_idx + chunk_size; ++i) {
-                chunk[i] = stored_frames[i];
+            for (int i=start_idx; i<start_idx + chunk_size; ++i) {
+                chunk[i-start_idx] = stored_frames[i];
             }
+            cout << "END OF GET_CHUNK_CENTERED_AT" << endl;
             return chunk;
         }
 

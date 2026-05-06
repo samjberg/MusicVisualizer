@@ -35,6 +35,12 @@ static double global_max = 0.01;
 int actual_screen_width = 0;
 int actual_screen_height = 0;
 
+
+//Global variables for keeping track of the current playhead
+uint64_t total_frames_sent = 0; //total number of frames SENT to the audio device (not necessarily played yet)
+uint64_t queued_bytes = 0;
+uint64_t queued_frames = 0;
+
 namespace fs = std::filesystem;
 
 typedef unsigned char uchar;
@@ -368,10 +374,27 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     //
     // SDL_Color c;
 
-    // vector<Frame> chunk = audio_stream.read_next_chunk();
-    // float* buff = chunk_to_float32_buff(chunk);
-    // SDL_PutAudioStreamData(sdl_audio_stream, buff, chunk.size() * sizeof(float));
-    
+    vector<Frame> chunk = audio_stream.read_next_chunk();
+    float* buff = chunk_to_float32_buff(chunk);
+    SDL_PutAudioStreamData(sdl_audio_stream, buff, chunk.size() * sizeof(float));
+    total_frames_sent += chunk.size();
+    queued_bytes = static_cast<uint64_t>(SDL_GetAudioStreamQueued(sdl_audio_stream));
+    queued_frames = queued_bytes / sizeof(Frame);
+    cout << "sizeof(Frame): " << sizeof(Frame) << endl;
+    cout << "queued_frames: " << queued_frames << endl;
+    uint64_t current_playhead = total_frames_sent - queued_frames;
+    vector<Frame> curr_chunk = audio_stream.get_chunk_centered_at(current_playhead);
+    vector<double> bins = fft_chunk_to_binned_power(curr_chunk);
+    double max_val = vecmax(bins);
+    if (max_val > global_max) {
+        global_max = max_val;
+    }
+    else {
+        global_max *= 0.99f;
+    }
+    bd.update_heights(divide_vector(bins, max_val));
+
+
     //dev essentially represents the actual sound card device
     // SDL_CreateAudioStream(&audio_spec,
     /* Center the message and scale it up */
