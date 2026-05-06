@@ -10,9 +10,13 @@
   freely.
 */
 // #include "SDL/src/SDL_internal.h"
+// #include "SDL/src/SDL_internal.h"
+// #include "SDL/src/SDL_internal.h"
 #include "SDL3/SDL_events.h"
-#include "SDL3/SDL_pixels.h"
+// #include "SDL3/SDL_oldnames.h"
+#include "SDL3/SDL_init.h"
 #include "SDL3/SDL_render.h"
+#include <SDL3/SDL_audio.h>
 #include "audiostream.h"
 #include <SDL3/SDL_rect.h>
 #include <filesystem>
@@ -212,6 +216,7 @@ double max_chunk_power(vector<complex<double>> chunk) {
 fs::path fpath = "/Users/sjber/Coding/C++/SDL_Projects/MusicVisualizer/footstepswav.wav";
 BarsDisplay bd;
 AudioStream audio_stream("/Users/sjber/Coding/C++/SDL_Projects/MusicVisualizer/cliffsofdover.wav", 2048);
+SDL_AudioStream* sdl_audio_stream;
 
 Size get_screen_size() {
     int w, h;
@@ -222,10 +227,33 @@ Size get_screen_size() {
 /* This function runs once at startup. */
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 {
+    SDL_Init(SDL_INIT_AUDIO);
     // fs::path imgpath = "/Users/sjber/Coding/C++/SDL_Projects/PPM_Viewer/img2.ppm";
     fs::path cwd = fs::current_path();
     fs::path argpath = argv[1];
     fs::path imgpath = argpath.is_absolute() ? argpath : cwd / argpath;
+
+    SDL_AudioDeviceID dev = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, NULL);
+    if (dev == 0) {
+        cout << SDL_GetError() << endl;
+        return SDL_APP_FAILURE;
+
+    }
+
+    SDL_AudioSpec dst_spec;
+    // audio_stream.next_frame();
+    SDL_GetAudioDeviceFormat(dev, &dst_spec, NULL);
+    SDL_AudioFormat audio_format = SDL_AUDIO_F32;
+    int num_channels = audio_stream.num_channels;
+    int sample_rate = audio_stream.sample_rate;
+    SDL_AudioSpec audio_spec{audio_format, num_channels, sample_rate};
+    sdl_audio_stream = SDL_CreateAudioStream(&audio_spec, &dst_spec);
+    SDL_BindAudioStream(dev, sdl_audio_stream);
+    // SDL_PutAudioStreamData(sdl_audio_stream,
+
+
+
+
     int width = 800;
     int height = 600;
     Size screen_size{width, height};
@@ -276,6 +304,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     }
     bd = BarsDisplay(screen_info, bars);
     cout << "actual number of bins: " << bins.size() << endl;
+    cout << "dst channels: " << dst_spec.channels << endl;
+    cout << "dst sample rate: " << dst_spec.freq << endl;
+    cout << "dst format: " << dst_spec.format << endl;
+    // cout << dst_spec.channels,
     // size_t width = img.get_width();
     // size_t height = img.get_height();
     // *appstate = new stateinfo{int(width), int(height), img};
@@ -313,6 +345,7 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
         bd.update_screen_size(new_screen_size);
     }
     else if (event->type == SDL_EVENT_QUIT) {
+        SDL_UnbindAudioStream(sdl_audio_stream);
         return SDL_APP_SUCCESS;  /* end the program, reporting success to the OS. */
     }
     return SDL_APP_CONTINUE;
@@ -332,9 +365,15 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     // SDL_FRect rect{250, 325, 100, 50};
     // SDL_Rect
 
+    //
     // SDL_Color c;
 
-
+    // vector<Frame> chunk = audio_stream.read_next_chunk();
+    // float* buff = chunk_to_float32_buff(chunk);
+    // SDL_PutAudioStreamData(sdl_audio_stream, buff, chunk.size() * sizeof(float));
+    
+    //dev essentially represents the actual sound card device
+    // SDL_CreateAudioStream(&audio_spec,
     /* Center the message and scale it up */
     SDL_GetRenderOutputSize(renderer, &w, &h);
     SDL_SetRenderScale(renderer, scale, scale);

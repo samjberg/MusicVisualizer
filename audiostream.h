@@ -33,6 +33,19 @@ struct Chunk {
 };
 
 
+inline float* chunk_to_float32_buff(std::vector<Frame> chunk) {
+    float* buff = new float[chunk.size()];
+    for (int i = 0; i < chunk.size(); ++i) {
+        float val = 0.0;
+        for (int c=0; c<chunk[i].num_channels; ++c) {
+            val += chunk[i].channels[c];
+        }
+        buff[i] = val / chunk[i].num_channels;
+    }
+    return buff;
+}
+
+
 class AudioStream {
     public:
         uint64_t data_size;
@@ -55,6 +68,7 @@ class AudioStream {
             bytes_per_frame = bits_per_frame / 8;
             chunk_size = frames_per_chunk * bytes_per_frame;
             data_size = ff_to_data();
+            pos = file.tellg();
 
             cout << "data_size: " << data_size << endl;
             cout << "bytes_per_sample: " << bytes_per_sample << endl;
@@ -175,17 +189,26 @@ class AudioStream {
             int i = 0;
             while (i < frames_per_chunk) {
                 frames[i] = next_frame();
+                stored_frames.push_back(frames[i]);
                 bytes_read += bytes_per_frame;
                 i++;
             }
             return frames;
         }
 
-        int64_t pos() {
-            return file.tellg();
+
+        vector<Frame> get_chunk_centered_at(uint64_t idx) {
+            int start_idx = idx - (chunk_size / 2);
+            vector<Frame> chunk(chunk_size);
+            for (int i=0; i<start_idx + chunk_size; ++i) {
+                chunk[i] = stored_frames[i];
+            }
+            return chunk;
         }
 
 
+
+        
         // inline std::ostream& operator<<(std::ostream& out, Frame<numT> frame) {
 
 
@@ -193,6 +216,9 @@ class AudioStream {
 
     private:
         ifstream file;
+        vector<Frame> stored_frames;
+        uint64_t pos;
+
 
 };
 
