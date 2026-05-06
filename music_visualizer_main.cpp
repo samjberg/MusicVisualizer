@@ -384,8 +384,10 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     SDL_PutAudioStreamData(sdl_audio_stream, buff, audio_stream.frames_per_chunk * sizeof(float) * audio_stream.num_channels);
     total_frames_sent += chunk.size();
     uint64_t queued_bytes = static_cast<uint64_t>(SDL_GetAudioStreamQueued(sdl_audio_stream));
-    uint64_t queued_frames = queued_bytes / sizeof(Frame);
+    // uint64_t queued_frames = queued_bytes / sizeof(Frame);
+    uint64_t queued_frames = queued_bytes / (sizeof(float) * audio_stream.num_channels);
     // cout << "sizeof(Frame): " << sizeof(Frame) << endl;
+    cout << "stored_frames.size(): " << audio_stream.num_stored_frames();
     cout << "total_frames_sent: " << total_frames_sent << endl;
     cout << "queued_frames: " << queued_frames << endl;
     current_playhead = total_frames_sent - queued_frames;
