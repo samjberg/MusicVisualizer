@@ -35,6 +35,8 @@ static SDL_Window *window = NULL;
 static SDL_Renderer *renderer = NULL;
 static double global_max = 0.01;
 static double global_min = 100.0;
+static uint64_t frames_per_chunk = 2048;
+static string gradient_style = "vertical";
 int actual_screen_width = 0;
 int actual_screen_height = 0;
 
@@ -320,7 +322,6 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     auto long_flags = args.long_flags;
     fs::path cwd = fs::current_path();
     fs::path argpath = args.plain_args.back();
-    uint64_t frames_per_chunk = 2048;
 
 
     if (contains<string>(short_flag_names, "c")) {
@@ -340,6 +341,23 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         num_bars = stoi(long_flags["bars"]);
     }
 
+    if (contains<string>(short_flag_names, "g")) {
+        string gs = short_flags["g"];
+        if (gs == "vertical" || gs.starts_with('v')) {
+            gradient_style = "vertical";
+        }
+        else if (gs == "horizontal" || gs.starts_with("hor")) {
+            gradient_style = "horizontal";
+        }
+    }
+
+    float lerp_t = 0.4;
+
+    if (contains<string>(short_flag_names, "l")) {
+        lerp_t = stof(short_flags["l"]);
+    }
+
+
 
 
     // int32_t frames_per_chunk = 2048;
@@ -348,7 +366,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     // }
     
 
-    audio_stream = new AudioStream(cwd/argpath, 2048);
+    audio_stream = new AudioStream(cwd/argpath, frames_per_chunk);
 
     SDL_AudioDeviceID dev = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, NULL);
     if (dev == 0) {
@@ -430,7 +448,11 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         Color c = colors[i%3];
         bars.push_back(Bar{decibels, c});
     }
-    bd = BarsDisplay(screen_info, bars, GradientInfo{RED, BLUE, bars.size()});
+    bd = gradient_style == "horizontal" ? BarsDisplay(screen_info, bars) : BarsDisplay(screen_info, bars, GradientInfo{GREEN, RED, static_cast<uint64_t>(screen_info.screen_size.y)});
+    bd.lerp_t = lerp_t;
+    
+    
+
     cout << "actual number of bins: " << bins.size() << endl;
     cout << "dst channels: " << dst_spec.channels << endl;
     cout << "dst sample rate: " << dst_spec.freq << endl;
@@ -503,14 +525,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     SDL_PutAudioStreamData(sdl_audio_stream, buff, audio_stream->frames_per_chunk * sizeof(float) * audio_stream->num_channels);
     total_frames_sent += chunk.size();
     uint64_t queued_bytes = static_cast<uint64_t>(SDL_GetAudioStreamQueued(sdl_audio_stream));
-    // uint64_t queued_frames = queued_bytes / sizeof(Frame);
     uint64_t queued_frames = queued_bytes / (sizeof(float) * audio_stream->num_channels);
-    // cout << "sizeof(Frame): " << sizeof(Frame) << endl;
-    // cout << "stored_frames.size(): " << audio_stream->num_stored_frames();
-    // cout << "total_frames_sent: " << total_frames_sent << endl;
-    // cout << "queued_frames: " << queued_frames << endl;
     current_playhead = total_frames_sent - queued_frames;
-    // cout << "current_playhead: " << current_playhead << endl;
     if ((current_playhead - last_update_pos) >= audio_stream->frames_per_chunk) {
         vector<Frame> curr_chunk = audio_stream->get_chunk_centered_at(current_playhead);
         cout << "chunk centered at current_playhead: " << current_playhead << " has length: " << curr_chunk.size();
@@ -531,13 +547,9 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         if (min_val < global_min) {
             global_min = min_val;
         }
-        else {
-            global_min *= 0.99f;
-        }
-        // vector<double> bins = convert_vec_to_range(db_bins, Range(global_min, global_max), Range(Range{0.0, double(h)/12.5}));
-        // bins = convert_vec_to_range(bins, Range{0.0, 1.0}, {0, static_cast<double>(h)/scale});
-        // bd.update_heights(divide_vector(bins, global_max-global_min));
-        // vector<double> adjusted_bins = divide_vector(bins_db,
+        // else {
+        //     global_min *= 0.99f;
+        // }
         vector<double> normed_bins = convert_vec_to_range(bins_db, Range{global_min, global_max}, Range{0.0, 1.0});
         // vector<double> adjusted_bins = convert_vec_to_range(normed_bins, Range{0, 1}, Range{0.1, 0.9});
         // vector<double> bins =
@@ -546,10 +558,9 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         last_update_pos = current_playhead;
     }
     // else {
-    //     bd.decay_heights(0.75);
-    //
+    //     bd.decay_heights(0.99f);
     // }
-    //
+
 
     //dev essentially represents the actual sound card device
     // SDL_CreateAudioStream(&audio_spec,
@@ -568,7 +579,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
     // SDL_RenderRect(renderer, &rect);
 
-    bd.render(renderer);
+    bd.render(renderer, gradient_style);
 
     SDL_RenderPresent(renderer);
 
