@@ -29,27 +29,41 @@
 #include <vector>
 #include "barsdisplay.h"
 #include "fft.h"
+#include "parseargs.h"
 
 static SDL_Window *window = NULL;
 static SDL_Renderer *renderer = NULL;
 static double global_max = 0.01;
+static double global_min = 100.0;
 int actual_screen_width = 0;
 int actual_screen_height = 0;
 
 fs::path fpath = "/Users/sjber/Coding/C++/SDL_Projects/MusicVisualizer/cliffsofdover.wav";
 // fs::path fpath = "/Users/sjber/Coding/C++/SDL_Projects/MusicVisualizer/footstepswav.wav";
 BarsDisplay bd;
-AudioStream audio_stream(fpath, 4096);
+// AudioStream audio_stream(fpath, 2048);
+AudioStream* audio_stream;
 SDL_AudioStream* sdl_audio_stream;
 
 //Global variables for keeping track of the current playhead
 uint64_t total_frames_sent = 0; //total number of frames SENT to the audio device (not necessarily played yet)
 uint64_t last_update_pos = 0;
 uint64_t current_playhead = 0;
+uint64_t num_bars = 32;
+fs::path project_root;
 
 namespace fs = std::filesystem;
 
 typedef unsigned char uchar;
+
+template<typename numT> struct Pair{
+    numT first;
+    numT second;
+};
+
+typedef Pair<double> Range;
+
+
 
 fs::path get_project_root(fs::path exepath) {
     fs::path curr_path = exepath;
@@ -78,6 +92,45 @@ numT vecmax(vector<numT>& vec) {
     }
     return max_val;
 }
+
+
+template<typename numT>
+Pair<numT> vecminmax(vector<numT>& vec) {
+    numT max_val = 0;
+    numT min_val = vec[0];
+    for (numT num : vec) {
+        if (num > max_val) {
+            max_val = num;
+        }
+        if (num < min_val) {
+            min_val = num;
+        }
+    }
+    return Pair<numT>{min_val, max_val};
+}
+
+double convert_ranges(double x, Range curr_range, Range new_range) {
+    return (((x - curr_range.first) * (new_range.second - new_range.first)) / (curr_range.second - curr_range.first)) + new_range.first;
+}
+
+vector<double> convert_vec_to_range(vector<double>& vec, Range curr_range, Range new_range) {
+    vector<double> res(vec.size());
+    for (int i=0; i<vec.size(); ++i) {
+        res[i] = convert_ranges(vec[i], curr_range, new_range);
+    }
+    return res;
+}
+
+
+// template<typename numT>
+// vector<numT> normalize_range_to_0_1(vector<numT> vec) {
+//     vector<numT> res;
+//
+// }
+
+
+
+
 
 template<typename numT>
 vector<numT> divide_vector(vector<numT>& vec, numT divisor) {
@@ -157,7 +210,7 @@ double frame_to_mono(Frame frame) {
     for (double val : frame.channels) {
         total += val;
     }
-    return total / frame.num_channels;
+    return total / static_cast<double>(frame.num_channels);
 }
 
 vector<double> chunk_to_mono(vector<Frame> chunk) {
@@ -207,11 +260,31 @@ vector<double> fft_chunk_to_power_chunk(vector<Frame> chunk) {
     return powers;
 }
 
-vector<double> fft_chunk_to_binned_power(vector<Frame> chunk, uint64_t num_bins=64) {
+
+vector<double> fft_chunk_to_decibels_chunk(vector<Frame> chunk) {
+    vector<complex<double>> complex_chunk = mono_chunk_to_complex(chunk_to_mono(chunk));
+    vector<complex<double>> freq_data = fft(complex_chunk);
+    vector<double> decibels(freq_data.size());
+    for (int i=0; i<freq_data.size(); ++i) {
+        decibels[i] = calculate_decibels(freq_data[i]);
+    }
+    return decibels;
+}
+
+vector<double> fft_chunk_to_binned_power(vector<Frame> chunk, uint64_t num_bins=num_bars) {
     cout << "size of chunk (beginning): " << chunk.size();
     vector<double> powers = fft_chunk_to_power_chunk(chunk);
     cout << "size of powers chunk (end): " << powers.size() << endl;
-    cout << "audio_stream.chunk_size: " << audio_stream.chunk_size << endl;
+    cout << "audio_stream->chunk_size: " << audio_stream->chunk_size << endl;
+    return create_bins(powers, num_bins);
+}
+
+
+vector<double> fft_chunk_to_binned_decibels(vector<Frame> chunk, uint64_t num_bins=num_bars) {
+    cout << "size of chunk (beginning): " << chunk.size();
+    vector<double> powers = fft_chunk_to_decibels_chunk(chunk);
+    cout << "size of powers chunk (end): " << powers.size() << endl;
+    cout << "audio_stream->chunk_size: " << audio_stream->chunk_size << endl;
     return create_bins(powers, num_bins);
 }
 
@@ -239,9 +312,43 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 {
     SDL_Init(SDL_INIT_AUDIO);
     // fs::path imgpath = "/Users/sjber/Coding/C++/SDL_Projects/PPM_Viewer/img2.ppm";
+
+    ParsedArgs args(argc, argv);
+    auto short_flag_names = args.short_flag_names;
+    auto long_flag_names = args.long_flag_names;
+    auto short_flags = args.short_flags;
+    auto long_flags = args.long_flags;
     fs::path cwd = fs::current_path();
-    fs::path argpath = argv[1];
-    fs::path imgpath = argpath.is_absolute() ? argpath : cwd / argpath;
+    fs::path argpath = args.plain_args.back();
+    uint64_t frames_per_chunk = 2048;
+
+
+    if (contains<string>(short_flag_names, "c")) {
+        frames_per_chunk = stoull(short_flags["c"]);
+    }
+    else if (contains<string>(long_flag_names, "frames-per-chunk")) {
+        frames_per_chunk = stoi(long_flags["frames-per-chunk"]);
+    }
+    else if (contains<string>(long_flag_names, "fpc")) {
+        frames_per_chunk = stoi(long_flags["fpc"]);
+    }
+
+    if (contains<string>(short_flag_names, "b")) {
+        num_bars = stoull(short_flags["b"]);
+    }
+    else if (contains<string>(long_flag_names, "frames-per-chunk")) {
+        num_bars = stoi(long_flags["bars"]);
+    }
+
+
+
+    // int32_t frames_per_chunk = 2048;
+    // if (argc > 1) {
+    //
+    // }
+    
+
+    audio_stream = new AudioStream(cwd/argpath, 2048);
 
     SDL_AudioDeviceID dev = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, NULL);
     if (dev == 0) {
@@ -250,12 +357,13 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 
     }
 
+
     SDL_AudioSpec dst_spec;
-    // audio_stream.next_frame();
+    // audio_stream->next_frame();
     SDL_GetAudioDeviceFormat(dev, &dst_spec, NULL);
     SDL_AudioFormat audio_format = SDL_AUDIO_F32;
-    int num_channels = audio_stream.num_channels;
-    int sample_rate = audio_stream.sample_rate;
+    int num_channels = audio_stream->num_channels;
+    int sample_rate = audio_stream->sample_rate;
     SDL_AudioSpec audio_spec{audio_format, num_channels, sample_rate};
     sdl_audio_stream = SDL_CreateAudioStream(&audio_spec, &dst_spec);
     SDL_BindAudioStream(dev, sdl_audio_stream);
@@ -268,18 +376,28 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     int height = 600;
     Size screen_size{width, height};
     ScreenInfo screen_info{screen_size, 4.0};
-    vector<Frame> chunk = audio_stream.read_next_chunk();
+    vector<Frame> chunk = audio_stream->read_next_chunk();
     // vector<double> chunk_power = fft_chunk_to_power_chunk(chunk);
-    vector<double> bins = fft_chunk_to_binned_power(chunk);
-    double max_val = vecmax(bins);
+    // vector<double> bins = fft_chunk_to_binned_decibels(chunk);
+    vector<double> bins = fft_chunk_to_binned_decibels(chunk, num_bars);
+    Range minmax = vecminmax(bins);
+    double min_val = minmax.first;
+    double max_val = minmax.second;
     if (max_val > global_max) {
         global_max = max_val;
     }
     else {
         global_max *= 0.99f;
     }
+
+    if (min_val > global_min) {
+        global_min = min_val;
+    }
+    else {
+        global_min *= 0.99f;
+    }
     // for (int i=0; i<20; ++i) {
-    //     chunk = audio_stream.read_next_chunk();
+    //     chunk = audio_stream->read_next_chunk();
     //     bins = fft_chunk_to_binned_power(chunk);
     //     max_val = vecmax(bins);
     //     if (max_val > global_max) {
@@ -310,9 +428,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         cout << "power: " << power << endl;
         cout << "db: " << decibels << endl;
         Color c = colors[i%3];
-        bars.push_back(Bar{power, c});
+        bars.push_back(Bar{decibels, c});
     }
-    bd = BarsDisplay(screen_info, bars);
+    bd = BarsDisplay(screen_info, bars, GradientInfo{RED, BLUE, bars.size()});
     cout << "actual number of bins: " << bins.size() << endl;
     cout << "dst channels: " << dst_spec.channels << endl;
     cout << "dst sample rate: " << dst_spec.freq << endl;
@@ -334,11 +452,12 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
 {
     if (event->type == SDL_EVENT_KEY_DOWN) {
         if (event->key.key == 'q') {
-            cout << "bytes_per_frame: " << audio_stream.bytes_per_frame;
+            cout << "bytes_per_frame: " << audio_stream->bytes_per_frame;
+            SDL_UnbindAudioStream(sdl_audio_stream);
             return SDL_APP_SUCCESS;
         }
         else if (event->key.key == 'd') {
-            vector<Frame> chunk = audio_stream.read_next_chunk();
+            vector<Frame> chunk = audio_stream->read_next_chunk();
             vector<double> bins = fft_chunk_to_binned_power(chunk);
             double max_val = vecmax(bins);
             if (max_val > global_max) {
@@ -371,42 +490,66 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     float x, y;
     const float scale = 4.0f;
 
-    int w = actual_screen_width  != 0 ? actual_screen_width  : 600;
-    int h = actual_screen_height != 0 ? actual_screen_height : 400;
+    int w = actual_screen_width  != 0 ? actual_screen_width  : 800;
+    int h = actual_screen_height != 0 ? actual_screen_height : 600;
     // SDL_FRect rect{250, 325, 100, 50};
     // SDL_Rect
 
     //
     // SDL_Color c;
 
-    vector<Frame> chunk = audio_stream.read_next_chunk();
+    vector<Frame> chunk = audio_stream->read_next_chunk();
     float* buff = chunk_to_float32_buff(chunk);
-    SDL_PutAudioStreamData(sdl_audio_stream, buff, audio_stream.frames_per_chunk * sizeof(float) * audio_stream.num_channels);
+    SDL_PutAudioStreamData(sdl_audio_stream, buff, audio_stream->frames_per_chunk * sizeof(float) * audio_stream->num_channels);
     total_frames_sent += chunk.size();
     uint64_t queued_bytes = static_cast<uint64_t>(SDL_GetAudioStreamQueued(sdl_audio_stream));
     // uint64_t queued_frames = queued_bytes / sizeof(Frame);
-    uint64_t queued_frames = queued_bytes / (sizeof(float) * audio_stream.num_channels);
+    uint64_t queued_frames = queued_bytes / (sizeof(float) * audio_stream->num_channels);
     // cout << "sizeof(Frame): " << sizeof(Frame) << endl;
-    cout << "stored_frames.size(): " << audio_stream.num_stored_frames();
-    cout << "total_frames_sent: " << total_frames_sent << endl;
-    cout << "queued_frames: " << queued_frames << endl;
+    // cout << "stored_frames.size(): " << audio_stream->num_stored_frames();
+    // cout << "total_frames_sent: " << total_frames_sent << endl;
+    // cout << "queued_frames: " << queued_frames << endl;
     current_playhead = total_frames_sent - queued_frames;
-    cout << "current_playhead: " << current_playhead << endl;
-    if ((current_playhead - last_update_pos) >= audio_stream.frames_per_chunk) {
-        vector<Frame> curr_chunk = audio_stream.get_chunk_centered_at(current_playhead);
+    // cout << "current_playhead: " << current_playhead << endl;
+    if ((current_playhead - last_update_pos) >= audio_stream->frames_per_chunk) {
+        vector<Frame> curr_chunk = audio_stream->get_chunk_centered_at(current_playhead);
         cout << "chunk centered at current_playhead: " << current_playhead << " has length: " << curr_chunk.size();
-        vector<double> bins = fft_chunk_to_binned_power(curr_chunk);
-        double max_val = vecmax(bins);
+        // vector<double> bins = fft_chunk_to_binned_power(curr_chunk, 16);
+        vector<double> bins_db = fft_chunk_to_binned_decibels(curr_chunk, num_bars);
+        // vector<double> bins = divide_vector(bins_db, static_cast<double>(global_max - global_min));
+        // Pair<double> minmax = vecminmax(db_bins);
+        Pair<double> minmax = vecminmax(bins_db);
+        double min_val = minmax.first;
+        double max_val = minmax.second;
+        cout << "minmax min: " << min_val << " minmax max: " << max_val << endl;
         if (max_val > global_max) {
             global_max = max_val;
         }
         else {
             global_max *= 0.99f;
         }
-        bd.update_heights(divide_vector(bins, global_max));
+        if (min_val < global_min) {
+            global_min = min_val;
+        }
+        else {
+            global_min *= 0.99f;
+        }
+        // vector<double> bins = convert_vec_to_range(db_bins, Range(global_min, global_max), Range(Range{0.0, double(h)/12.5}));
+        // bins = convert_vec_to_range(bins, Range{0.0, 1.0}, {0, static_cast<double>(h)/scale});
+        // bd.update_heights(divide_vector(bins, global_max-global_min));
+        // vector<double> adjusted_bins = divide_vector(bins_db,
+        vector<double> normed_bins = convert_vec_to_range(bins_db, Range{global_min, global_max}, Range{0.0, 1.0});
+        // vector<double> adjusted_bins = convert_vec_to_range(normed_bins, Range{0, 1}, Range{0.1, 0.9});
+        // vector<double> bins =
+        bd.update_heights(normed_bins);
+        // bd.update_heights(divide_vector(bins, global_max));
         last_update_pos = current_playhead;
     }
-
+    // else {
+    //     bd.decay_heights(0.75);
+    //
+    // }
+    //
 
     //dev essentially represents the actual sound card device
     // SDL_CreateAudioStream(&audio_spec,

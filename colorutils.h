@@ -1,5 +1,6 @@
 #ifndef COLORUTILS_H
 #define COLORUTILS_H
+#include <cmath>
 #include <vector>
 #include <cstdint>
 #include <fstream>
@@ -10,10 +11,13 @@ struct Color {
     uint8_t g;
     uint8_t b;
     uint8_t a;
-
-    
-
 };
+
+inline Color RED{255, 0, 0, 255};
+inline Color GREEN{0, 255, 0, 255};
+inline Color BLUE{0, 0, 255, 255};
+inline Color WHITE{255, 255, 255, 255};
+inline Color BLACK{0, 0, 0, 255};
 
 inline std::ostream& operator<<(std::ostream& out, Color c) {
         out << "(" << int(c.r) << ", " << int(c.g) << ", " << int(c.b) << ")";
@@ -45,9 +49,16 @@ struct ColorF {
     const ColorF operator-(ColorF other) {
         return ColorF{r-other.r, g-other.g, b-other.b, a};
     }
-
 };
 
+typedef std::vector<Color> Gradient;
+
+struct GradientInfo {
+    Color start;
+    Color end;
+    uint64_t len;
+
+};
 
 //Literally just perform component wise subtraction of c1 - c2, excluding the alpha channel if ingore_alpha is true
 inline Color subtract_colors(Color c1, Color c2, bool ignore_alpha = true) {
@@ -86,6 +97,7 @@ inline ColorF subtract_scalar(ColorF color, float val, bool ignore_alpha = true)
 }
 
 
+//Ensures a clamps all individual channels of a ColorF to the 8 bit range (0-255)
 inline ColorF sanitize_colorf(ColorF color) {
     if (color.r < 0) 
         color.r = 0;
@@ -111,7 +123,27 @@ inline ColorF sanitize_colorf(ColorF color) {
 }
 
 
-inline std::vector<Color> create_gradient(Color start, Color end, uint64_t len) {
+//Creates a gradient (vector<Color>) from start to stop of length len.
+//For xample create_gradient({255, 0, 0}, {0, 0, 255}, len)
+inline Gradient create_gradient(Color start, Color end, uint64_t len) {
+    std::vector<Color> gradient(len);
+    gradient[0] = start;
+    ColorF curr_color{float(start.r), float(start.g), float(start.b), float(start.a)};
+    //direction = (end - start) / len.  It acts as a vector pointing from start to end, with a magnitude such that it will take len steps
+    //to traverse all the way from start to end.  Exactly what we want for a gradient
+    ColorF direction = subtract_colors(ColorF(end), ColorF(start)) / len;
+    for (int i=1; i<len-1; ++i) {
+        curr_color = sanitize_colorf(curr_color + direction);
+        gradient[i] = Color(uint8_t(curr_color.r), uint8_t(curr_color.g), uint8_t(curr_color.b), uint8_t(curr_color.a));
+    }
+    return gradient;
+}
+
+
+inline Gradient create_gradient(GradientInfo info) {
+    Color start = info.start;
+    Color end = info.end;
+    uint64_t len = info.len;
     std::vector<Color> gradient(len);
     gradient[0] = start;
     ColorF curr_color{float(start.r), float(start.g), float(start.b), float(start.a)};

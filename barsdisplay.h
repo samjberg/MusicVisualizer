@@ -9,6 +9,7 @@
 #include <SDL3/SDL_main.h>
 #include "SDL3/SDL_render.h"
 #include <SDL3/SDL_rect.h>
+#include "colorutils.h"
 
 
 
@@ -27,12 +28,6 @@ inline const bool operator==(Pos& left, Pos& right) {return (left.x == right.x) 
 typedef Pos Size;
 typedef SDL_FRect Rect;
 
-struct Color {
-    uint8_t r;
-    uint8_t g;
-    uint8_t b;
-    uint8_t a;
-};
 
 //This bar struct is meant very specifically for use with BarsDisplay.  It really has no use otherwise, as it is index based
 struct Bar {
@@ -65,7 +60,15 @@ class BarsDisplay {
             screen_height = screen_size.y;
             count = bars.size();
             bar_width = screen_width / count;
-
+            gradient = std::vector<Color>({RED, GREEN, BLUE});
+        }
+        BarsDisplay(ScreenInfo screen_info, std::vector<Bar> bars, GradientInfo grad_info) : screen_size(screen_info.screen_size), bars(bars) {
+            render_scale = screen_info.render_scale;
+            screen_width = screen_size.x;
+            screen_height = screen_size.y;
+            count = bars.size();
+            bar_width = screen_width / count;
+            gradient = create_gradient(grad_info);
         }
         BarsDisplay(Size screen_size, std::vector<Bar> bars) : screen_size(screen_size), bars(bars) {
             render_scale = 1.0;
@@ -86,8 +89,20 @@ class BarsDisplay {
 
 
         void update_heights(std::vector<double> heights) {
+            double t = 0.4; //time value for lerp
             for (int i=0; i<count; ++i) {
-                bars[i].height = heights[i];
+                double old_val = bars[i].height;
+                double target_val = heights[i];
+                // bars[i].height = old_val + t * (target_val - old_val);
+                bars[i].height = std::lerp(bars[i].height, heights[i], t);
+            }
+        }
+
+        void decay_heights(double factor = 0.99) {
+            for (int i=0; i<count; ++i) {
+                float new_val = factor;
+                bars[i].height = std::lerp(bars[i].height, new_val, 0.4);
+
             }
         }
 
@@ -118,12 +133,12 @@ class BarsDisplay {
         void render(SDL_Renderer *renderer) {
             for (int i=0; i<bars.size(); ++i) {
                 Rect rect = getRect(i);
-                uint8_t r = bars[i].color.r;
-                uint8_t g = bars[i].color.g;
-                uint8_t b = bars[i].color.b;
-                uint8_t a = bars[i].color.a;
+                uint8_t r = gradient[i].r;
+                uint8_t g = gradient[i].g;
+                uint8_t b = gradient[i].b;
+                uint8_t a = gradient[i].a;
                 SDL_SetRenderDrawColor(renderer, r, g, b, a);
-                SDL_RenderRect(renderer, &rect);
+                SDL_RenderFillRect(renderer, &rect);
 
             }
         }
@@ -132,10 +147,12 @@ class BarsDisplay {
 
 
     private:
-        Size screen_size;
-        float render_scale;
-        int32_t screen_width, screen_height;
-        std::vector<Bar> bars;
+        Size screen_size; //The size of the screen, duh
+        float render_scale; //The factor by which the render is scaled up
+        int32_t screen_width, screen_height; //figure it out
+        std::vector<Bar> bars; //list of the actual bar objects (structs) that are displayed
+        Gradient gradient; //the gradient used across the bars (horizontally) to determine bar color
+        float lerp_t;
 
 
 };

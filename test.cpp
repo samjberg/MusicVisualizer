@@ -1,9 +1,11 @@
 #include <iostream>
 #include <string>
 #include <stringtools.h>
+#include <unordered_map>
 // #include "frame.h"
 // #include "barsdisplay.h"
 #include "colorutils.h"
+#include "parseargs.h"
 
 
 // inline std::string reverse_str(std::string str) {
@@ -67,6 +69,31 @@ inline int32_t get_bitreversed_index(int32_t idx) {
 
 int main(int argc, char** argv) {
 
+    ParsedArgs args(argc, argv);
+    vector<string> short_flag_names = args.short_flag_names;
+    vector<string> long_flag_names = args.long_flag_names;
+    vector<string> plain_args = args.plain_args;
+    unordered_map<string, string> short_flags = args.short_flags;
+    unordered_map<string, string> long_flags = args.long_flags;
+
+    cout << "Short flags:\n";
+    for (auto kv : short_flags) {
+        string name = kv.first;
+        string val = kv.second;
+        cout << name << ": " << val << endl;
+    }
+    cout << "long flags:\n";
+    for (auto kv : long_flags) {
+        string name = kv.first;
+        string val = kv.second;
+        cout << name << ": " << val << endl;
+    }
+    cout << "plain args:\n";
+    for (string arg : plain_args) {
+        cout << arg << endl;
+    }
+
+    return 0;
 
     vector<Color> gradient = create_gradient(Color{255, 0, 0}, Color{0, 0, 255}, 100);
     for (Color color : gradient) {

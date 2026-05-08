@@ -211,13 +211,12 @@ class AudioStream {
             uint64_t end_idx = min(start_idx + frames_per_chunk, stored_frames.size());
             cout << "chunk centered at: " << idx << " starts at: " << start_idx << " and ends at: " << end_idx << endl;
             vector<Frame> chunk(frames_per_chunk);
-            for (int i=start_idx; i<end_idx; ++i) {
-                chunk[i-start_idx] = stored_frames[i];
-            }
-            // for (int i=0; i<chunk_size; ++i) {
-            //     int idx = i + chunk_size;
-            //     chunk[i] = stored_frames[idx];
+            // for (int i=start_idx; i<end_idx; ++i) {
+            //     chunk[i-start_idx] = stored_frames[i];
             // }
+            for (int i=0; i<frames_per_chunk; ++i) {
+                chunk[i] = stored_frames[i + start_idx];
+            }
             return chunk;
         }
 
@@ -225,7 +224,14 @@ class AudioStream {
             return stored_frames.size();
         }
 
+        void close() {
+            file.close();
+        }
 
+
+        // void operator=(AudioStream as) {
+        //
+        // }
 
         
         // inline std::ostream& operator<<(std::ostream& out, Frame<numT> frame) {

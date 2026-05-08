@@ -1,3 +1,5 @@
+#ifndef FFT_H
+#define FFT_H
 #include <cstdint>
 #include <iostream>
 // #include <numbers>
@@ -71,7 +73,7 @@ inline string to_bin(numT num) {
 
 template<typename numT>
 inline numT bitshift(numT num, int32_t shift = -1) {
-    uint64_t *x = (size_t*)&num;
+    uint64_t *x = (uint64_t*)&num;
     if (shift < 0) {
         *x <<= (-shift);
     }
@@ -83,7 +85,7 @@ inline numT bitshift(numT num, int32_t shift = -1) {
 
 template<typename numT>
 inline numT mybit_or(double num, uint64_t with) {
-    uint64_t *x = (size_t*)&num;
+    uint64_t *x = (uint64_t*)&num;
     *x |= with;
     numT *anded_num = (numT*)x;
     return *anded_num;
@@ -93,52 +95,13 @@ inline numT mybit_or(double num, uint64_t with) {
 
 template<typename numT>
 inline numT mybit_and(double num, uint64_t with) {
-    uint64_t *x = (size_t*)&num;
+    uint64_t *x = (uint64_t*)&num;
     *x &= with;
     numT *anded_num = (numT*)x;
     return *anded_num;
     // return x & with;
 }
 
-
-template <typename numT>
-inline numT reverse_bits(numT x, int32_t bits = 32) {
-    numT rev = 0;
-    for (int32_t i = 0; i < bits; i++) {
-        rev = (rev << 1) | (x & 1);
-        x >>= 1;
-    }
-    return rev;
-}
-
-
-inline double reverse_bits(double x, int32_t bits = 32) {
-    uint64_t *x_sizet_p =  (size_t*)&x;
-    uint64_t reversed_sizet = reverse_bits(*x_sizet_p);
-    return static_cast<double>(reversed_sizet);
-
-}
-
-
-template <typename numT>
-inline complex<numT> reverse_bits(complex<numT>& x, int32_t bits = 32) {
-    numT real = x.real();
-    numT imag = x.imag();
-
-    numT real_rev = reverse_bits(real, bits);
-    numT imag_rev = reverse_bits(imag, bits);
-    return complex<numT>(real_rev, imag_rev);
-}
-
-
-template<typename numT>
-inline vector<numT> reverse_bits(vector<numT>& lst, int32_t bits = 32) {
-    vector<numT> reversed_lst(lst.size());
-    for (int32_t i=0; i<lst.size(); ++i) {
-        reversed_lst[i] = reverse_bits(lst[i], bits);
-    }
-    return reversed_lst;
-}
 
 
 template<typename numT>
@@ -187,10 +150,10 @@ inline vector<complex<double>> fft(vector<complex<double>>& a) {
         double m = pow(2, s);
         // pi;
         complex<double> wm = exp((-2.0 * pi * I)/double(m));
-        for (uint64_t k=0; k<n-1; k+=size_t(m)) {
+        for (uint64_t k=0; k<n-1; k+=uint64_t(m)) {
             complex<double> w(1.0, 0.0);
             for (uint64_t j = 0; j<m/2; ++j) {
-                uint64_t idx1 = k+j+size_t(m)/2;
+                uint64_t idx1 = k+j+uint64_t(m)/2;
                 uint64_t idx2 = k+j;
                 complex<double> t = w * A[idx1];
                 complex<double> u = A[idx2];
@@ -208,7 +171,7 @@ inline double calculate_power(complex<double> c) {
 }
 
 inline double calculate_decibels(complex<double> c) {
-    return 20 * log10(calculate_power(c));
+    return 10 * log10(calculate_power(c));
 }
 
 
@@ -222,4 +185,7 @@ inline vector<complex<double>> generate_random_vector(uint64_t len, double mn, d
     }
     return lst;
 }
+
+
+#endif
 
