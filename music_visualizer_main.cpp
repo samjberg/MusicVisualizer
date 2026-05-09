@@ -37,12 +37,14 @@ static double global_max = 0.01;
 static double global_min = 100.0;
 static double freq_min = 40.0;
 static double freq_max = 8000.0;
-
+static bool playing = true;
 static uint64_t sample_rate = 44100;
 static uint64_t frames_per_chunk = 2048;
 static string gradient_style = "vertical";
 int actual_screen_width = 0;
 int actual_screen_height = 0;
+float* paused_data_buffer;
+int paused_buffer_size = 0;
 
 fs::path fpath = "/Users/sjber/Coding/C++/SDL_Projects/MusicVisualizer/cliffsofdover.wav";
 // fs::path fpath = "/Users/sjber/Coding/C++/SDL_Projects/MusicVisualizer/footstepswav.wav";
@@ -309,8 +311,8 @@ vector<double> create_log_bins(vector<Frame> chunk, uint64_t num_bins, double sa
         for (int j=start_idx; j<end_idx; ++j) {
             sum += calculate_power(freq_data[j]);
         }
-        double avg_power = sum;// / (end_idx-start_idx);
-        avg_power = max(sum, 1e-12);
+        double avg_power = sum/(end_idx-start_idx);
+        avg_power = max(avg_power, 1e-12);
         double normed_avg_power = norm_factor_multiplier * avg_power / (fft_size * fft_size);
         binned_vals.push_back(calculate_db_from_power(normed_avg_power));
     }
@@ -604,6 +606,9 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
             bd.update_heights(divide_vector(bins, max_val));
 
         }
+        else if (event->key.key == ' ') {
+            playing = !playing;
+        }
     }
     else if (event->type == SDL_EVENT_WINDOW_RESIZED) {
         Size new_screen_size = get_screen_size();
@@ -633,49 +638,58 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     float decay_factor = 0.99f;
 
 
-    vector<Frame> chunk = audio_stream->read_next_chunk();
-    float* buff = chunk_to_float32_buff(chunk);
-    SDL_PutAudioStreamData(sdl_audio_stream, buff, audio_stream->frames_per_chunk * sizeof(float) * audio_stream->num_channels);
-    total_frames_sent += chunk.size();
-    uint64_t queued_bytes = static_cast<uint64_t>(SDL_GetAudioStreamQueued(sdl_audio_stream));
-    uint64_t queued_frames = queued_bytes / (sizeof(float) * audio_stream->num_channels);
-    current_playhead = total_frames_sent - queued_frames;
-    if ((current_playhead - last_update_pos) >= audio_stream->frames_per_chunk) {
-        vector<Frame> curr_chunk = audio_stream->get_chunk_centered_at(current_playhead);
-        // cout << "chunk centered at current_playhead: " << current_playhead << " has length: " << curr_chunk.size();
-        // vector<double> bins = fft_chunk_to_binned_power(curr_chunk, num_bars);
-        // vector<double> bins = fft_chunk_to_binned_decibels(curr_chunk, num_bars);
-        vector<double> bins = create_log_bins(curr_chunk, num_bars, sample_rate, freq_min, freq_max);
-        // vector<double> bins = divide_vector(bins_db, static_cast<double>(global_max - global_min));
-        // Pair<double> minmax = vecminmax(db_bins);
-        Pair<double> minmax = vecminmax(bins);
-        double min_val = minmax.first;
-        double max_val = minmax.second;
-        // cout << "minmax min: " << min_val << " minmax max: " << max_val << endl;
-        if (max_val > global_max) {
-            global_max = max_val;
-        }
-        else {
-            global_max *= decay_factor;
-        }
-        if (min_val < global_min) {
-            global_min = min_val;
-        }
-        else {
-            global_min *= 0.99f;
-        }
-        vector<double> normed_bins = convert_vec_to_range(bins, Range{global_min, global_max}, Range{0.0, 1.0});
-        // vector<double> normed_bins = convert_vec_to_range(bins, Range{-20.0, 60.0}, Range{0.0, 1.0});
-        // vector<double> adjusted_bins = convert_vec_to_range(normed_bins, Range{0, 1}, Range{0.1, 0.9});
-        // vector<double> bins =
-        bd.update_heights(normed_bins);
-        // bd.update_heights(divide_vector(bins, global_max));
-        last_update_pos = current_playhead;
-    }
-    // else {
-    //     bd.decay_heights(0.99f);
-    // }
 
+    if (playing) {
+        if (SDL_AudioStreamDevicePaused(sdl_audio_stream)) {
+            SDL_ResumeAudioStreamDevice(sdl_audio_stream);
+        }
+        vector<Frame> chunk = audio_stream->read_next_chunk();
+        float* buff = chunk_to_float32_buff(chunk);
+        SDL_PutAudioStreamData(sdl_audio_stream, buff, audio_stream->frames_per_chunk * sizeof(float) * audio_stream->num_channels);
+        total_frames_sent += chunk.size();
+        uint64_t queued_bytes = static_cast<uint64_t>(SDL_GetAudioStreamQueued(sdl_audio_stream));
+        uint64_t queued_frames = queued_bytes / (sizeof(float) * audio_stream->num_channels);
+        current_playhead = total_frames_sent - queued_frames;
+        if ((current_playhead - last_update_pos) >= audio_stream->frames_per_chunk) {
+            vector<Frame> curr_chunk = audio_stream->get_chunk_centered_at(current_playhead);
+            // cout << "chunk centered at current_playhead: " << current_playhead << " has length: " << curr_chunk.size();
+            // vector<double> bins = fft_chunk_to_binned_power(curr_chunk, num_bars);
+            // vector<double> bins = fft_chunk_to_binned_decibels(curr_chunk, num_bars);
+            vector<double> bins = create_log_bins(curr_chunk, num_bars, sample_rate, freq_min, freq_max);
+            // vector<double> bins = divide_vector(bins_db, static_cast<double>(global_max - global_min));
+            // Pair<double> minmax = vecminmax(db_bins);
+            Pair<double> minmax = vecminmax(bins);
+            double min_val = minmax.first;
+            double max_val = minmax.second;
+            // cout << "minmax min: " << min_val << " minmax max: " << max_val << endl;
+            if (max_val > global_max) {
+                global_max = max_val;
+            }
+            else {
+                global_max *= decay_factor;
+            }
+            if (min_val < global_min) {
+                global_min = min_val;
+            }
+            else {
+                global_min *= 0.99f;
+            }
+            vector<double> normed_bins = convert_vec_to_range(bins, Range{global_min, global_max}, Range{0.0, 1.0});
+            // vector<double> normed_bins = convert_vec_to_range(bins, Range{-20.0, 60.0}, Range{0.0, 1.0});
+            // vector<double> adjusted_bins = convert_vec_to_range(normed_bins, Range{0, 1}, Range{0.1, 0.9});
+            // vector<double> bins =
+            bd.update_heights(normed_bins);
+            // bd.update_heights(divide_vector(bins, global_max));
+            last_update_pos = current_playhead;
+        }
+        // else {
+        //     bd.decay_heights(0.99f);
+        // }
+        delete[] buff;
+    }
+    else {
+        SDL_PauseAudioStreamDevice(sdl_audio_stream);
+    }
 
     //dev essentially represents the actual sound card device
     // SDL_CreateAudioStream(&audio_spec,

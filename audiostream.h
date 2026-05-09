@@ -33,18 +33,6 @@ struct Chunk {
 };
 
 
-// inline float* chunk_to_float32_buff(std::vector<Frame> chunk) {
-//     float* buff = new float[chunk.size()];
-//     for (int i = 0; i < chunk.size(); ++i) {
-//         float val = 0.0;
-//         for (int c=0; c<chunk[i].num_channels; ++c) {
-//             val += chunk[i].channels[c];
-//         }
-//         buff[i] = val / chunk[i].num_channels;
-//     }
-//     return buff;
-// }
-
 inline float* chunk_to_float32_buff(std::vector<Frame> chunk) {
     float* buff = new float[chunk.size() * chunk[0].num_channels];
     int count = 0;
@@ -57,6 +45,8 @@ inline float* chunk_to_float32_buff(std::vector<Frame> chunk) {
     }
     return buff;
 }
+
+
 
 class AudioStream {
     public:
@@ -82,11 +72,6 @@ class AudioStream {
             data_size = ff_to_data();
             pos = file.tellg();
 
-            // cout << "data_size: " << data_size << endl;
-            // cout << "bytes_per_sample: " << bytes_per_sample << endl;
-            // cout << "block_align: " << block_align << endl;
-            // cout << "frames_per_chunk: " << frames_per_chunk << endl;
-            // cout << "chunk_size: " << chunk_size << endl;
         }
 
         AudioStream() {}
@@ -107,11 +92,6 @@ class AudioStream {
             return buff;
         }
 
-        // uint64_t next_n_bytes_sizet(uint64_t n, bool little_endian=true) {
-        //     // cout << "converting " << n << " bytes to uint64_t" << endl;
-        //     char* s = next_n_bytes(n);
-        //     return n_bytes_to_int(s, n, little_endian);
-        // }
 
         template<typename numT>
         numT next_n_bytes_sizet(uint64_t n, bool little_endian=true) {
@@ -220,6 +200,20 @@ class AudioStream {
             return chunk;
         }
 
+        //Seek forward n bytes from current stream pos in file
+        void seek_forward(uint64_t n) {
+            file.seekg(n, ios_base::cur);
+        }
+
+        //Seek backwards n bytes from current stream pos in file
+        void seek_backwards(uint64_t n) {
+            file.seekg(-n, ios_base::cur);
+        }
+
+        void seek_to_pos(uint64_t n) {
+            file.seekg(n, ios_base::beg);
+        }
+
         uint64_t num_stored_frames() {
             return stored_frames.size();
         }
@@ -227,15 +221,6 @@ class AudioStream {
         void close() {
             file.close();
         }
-
-
-        // void operator=(AudioStream as) {
-        //
-        // }
-
-        
-        // inline std::ostream& operator<<(std::ostream& out, Frame<numT> frame) {
-
 
 
 
