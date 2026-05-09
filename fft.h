@@ -18,14 +18,15 @@ const complex<double> I(0, 1);
 
 
 
-
-inline double random() {
+//Name changed to randomdouble for compatibility reasons
+inline double randomdouble() {
     return double(rand()) / RAND_MAX;
 }
 
-inline double random(double mn, double mx) {
+//Name changed to randomdouble for compatility reasons
+inline double randomdouble(double mn, double mx) {
     double range = mx - mn;
-    double r = random();
+    double r = randomdouble();
     return mn + (r * range);
 }
 
@@ -164,13 +165,18 @@ inline double calculate_decibels(complex<double> c) {
 }
 
 
+inline double calculate_db_from_power(double power) {
+    return 10 * log10(power);
+}
+
+
 
 inline vector<complex<double>> generate_random_vector(uint64_t len, double mn, double mx) {
     vector<complex<double>> lst(len);
     for (int32_t i=0; i<len; ++i) {
         // double r = random(mn, mx);
         // double im = random(mn, mx);
-        lst[i] = complex<double>(random(mn, mx), random(mn, mx));
+        lst[i] = complex<double>(randomdouble(mn, mx), randomdouble(mn, mx));
     }
     return lst;
 }

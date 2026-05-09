@@ -176,7 +176,7 @@ uint64_t closest_pow2(uint64_t x) {
 vector<complex<double>> channel_to_complex(vector<Frame>& frames, int channel) {
     vector<complex<double>> lst;
     uint64_t curr_len = frames.size();
-    cout << "curr_len: " << curr_len << endl;
+    // cout << "curr_len: " << curr_len << endl;
     uint64_t closest_pow = closest_pow2(curr_len);
     // lst.reserve(closest_pow);
     int i=0;
@@ -227,25 +227,24 @@ vector<double> chunk_to_mono(vector<Frame> chunk) {
     return mono_vals;
 }
 
-// vector<double> create_bins(vector<double> vals, uint64_t num_bins) {
-//     uint64_t len = vals.size();
-//     uint64_t vals_per_bin = len / num_bins;
-//     vector<double> binned_vals;
-//
-//     for (int i=0; i<len; i+=vals_per_bin) {
-//         double sum = 0.0;
-//         for (int j=i; j<i+vals_per_bin; ++j) {
-//             sum += vals[j];
-//         }
-//         binned_vals.push_back(sum / vals_per_bin);
-//     }
-//     cout << "Returning: " << binned_vals.size() << " binned vals";
-//     return binned_vals;
-// }
-
-double calculate_db_from_power(double power) {
-    return 10 * log10(power);
+vector<vector<double>> chunk_to_samples(vector<Frame> chunk) {
+    int num_channels = chunk[0].num_channels;
+    int num_samples = chunk.size();
+    //Create a vector of vector<double> of length num_channels.  One vector<double> for each channel
+    vector<vector<double>> samples_list(num_channels);
+    //Initialize each element of samples_list to be a vector<double> of length num_samples
+    for (int i=0; i<num_channels; ++i) {
+        samples_list[i] = vector<double>(num_samples);
+    }
+    //Assign the actual values
+    for (int i=0; i<chunk.size(); ++i) {
+        for (int c=0; c<num_channels; ++c) {
+            samples_list[c][i] = chunk[i].channels[c];
+        }
+    }
+    return samples_list;
 }
+
 
 vector<double> create_bins(vector<double> vals, uint64_t num_bins) {
     uint64_t len = vals.size() / 2;
@@ -290,8 +289,8 @@ int freq_to_fft_index(double freq, int fft_size, int sample_rate) {
 }
 
 
-vector<double> create_log_bins(vector<Frame> chunk, uint64_t num_bins, double sample_rate, double min_freq=60.0, uint64_t max_freq=12000.0)
-{
+vector<double> create_log_bins(vector<Frame> chunk, uint64_t num_bins, double sample_rate,
+                               double min_freq=60.0, uint64_t max_freq=12000.0, double norm_factor_multiplier=10.0) {
 
     vector<complex<double>> complex_chunk = mono_chunk_to_complex(chunk_to_mono(chunk));
     vector<complex<double>> freq_data = fft(complex_chunk);
@@ -312,7 +311,8 @@ vector<double> create_log_bins(vector<Frame> chunk, uint64_t num_bins, double sa
         }
         double avg_power = sum;// / (end_idx-start_idx);
         avg_power = max(sum, 1e-12);
-        binned_vals.push_back(calculate_db_from_power(avg_power));
+        double normed_avg_power = norm_factor_multiplier * avg_power / (fft_size * fft_size);
+        binned_vals.push_back(calculate_db_from_power(normed_avg_power));
     }
 
     return binned_vals;
@@ -375,19 +375,19 @@ vector<double> fft_chunk_to_power_chunk(vector<Frame> chunk) {
 // }
 //
 vector<double> fft_chunk_to_binned_power(vector<Frame> chunk, uint64_t num_bins=num_bars) {
-    cout << "size of chunk (beginning): " << chunk.size();
+    // cout << "size of chunk (beginning): " << chunk.size();
     vector<double> powers = fft_chunk_to_power_chunk(chunk);
-    cout << "size of powers chunk (end): " << powers.size() << endl;
-    cout << "audio_stream->chunk_size: " << audio_stream->chunk_size << endl;
+    // cout << "size of powers chunk (end): " << powers.size() << endl;
+    // cout << "audio_stream->chunk_size: " << audio_stream->chunk_size << endl;
     return create_bins(powers, num_bins);
 }
 
 
 vector<double> fft_chunk_to_binned_decibels(vector<Frame> chunk, uint64_t num_bins=num_bars) {
-    cout << "size of chunk (beginning): " << chunk.size();
+    // cout << "size of chunk (beginning): " << chunk.size();
     vector<double> powers = fft_chunk_to_power_chunk(chunk);
-    cout << "size of powers chunk (end): " << powers.size() << endl;
-    cout << "audio_stream->chunk_size: " << audio_stream->chunk_size << endl;
+    // cout << "size of powers chunk (end): " << powers.size() << endl;
+    // cout << "audio_stream->chunk_size: " << audio_stream->chunk_size << endl;
     return create_bins(powers, num_bins);
 }
 
@@ -438,7 +438,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     if (contains<string>(short_flag_names, "b")) {
         num_bars = stoull(short_flags["b"]);
     }
-    else if (contains<string>(long_flag_names, "frames-per-chunk")) {
+    else if (contains<string>(long_flag_names, "num-bars")) {
         num_bars = stoi(long_flags["bars"]);
     }
 
@@ -450,6 +450,13 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         else if (gs == "horizontal" || gs.starts_with("hor")) {
             gradient_style = "horizontal";
         }
+    }
+
+    if (contains<string>(short_flag_names, "minfreq")) {
+        freq_min = stoull(short_flags["minfreq"]);
+    }
+    if (contains<string>(short_flag_names, "maxfreq")) {
+        freq_max = stoull(short_flags["maxfreq"]);
     }
 
     float lerp_t = 0.4;
@@ -562,7 +569,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     cout << "dst channels: " << dst_spec.channels << endl;
     cout << "dst sample rate: " << dst_spec.freq << endl;
     cout << "dst format: " << dst_spec.format << endl;
-    // cout << dst_spec.channels,
+
     // size_t width = img.get_width();
     // size_t height = img.get_height();
     // *appstate = new stateinfo{int(width), int(height), img};
@@ -635,7 +642,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     current_playhead = total_frames_sent - queued_frames;
     if ((current_playhead - last_update_pos) >= audio_stream->frames_per_chunk) {
         vector<Frame> curr_chunk = audio_stream->get_chunk_centered_at(current_playhead);
-        cout << "chunk centered at current_playhead: " << current_playhead << " has length: " << curr_chunk.size();
+        // cout << "chunk centered at current_playhead: " << current_playhead << " has length: " << curr_chunk.size();
         // vector<double> bins = fft_chunk_to_binned_power(curr_chunk, num_bars);
         // vector<double> bins = fft_chunk_to_binned_decibels(curr_chunk, num_bars);
         vector<double> bins = create_log_bins(curr_chunk, num_bars, sample_rate, freq_min, freq_max);
@@ -644,7 +651,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         Pair<double> minmax = vecminmax(bins);
         double min_val = minmax.first;
         double max_val = minmax.second;
-        cout << "minmax min: " << min_val << " minmax max: " << max_val << endl;
+        // cout << "minmax min: " << min_val << " minmax max: " << max_val << endl;
         if (max_val > global_max) {
             global_max = max_val;
         }
@@ -654,10 +661,11 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         if (min_val < global_min) {
             global_min = min_val;
         }
-        // else {
-        //     global_min *= 0.99f;
-        // }
+        else {
+            global_min *= 0.99f;
+        }
         vector<double> normed_bins = convert_vec_to_range(bins, Range{global_min, global_max}, Range{0.0, 1.0});
+        // vector<double> normed_bins = convert_vec_to_range(bins, Range{-20.0, 60.0}, Range{0.0, 1.0});
         // vector<double> adjusted_bins = convert_vec_to_range(normed_bins, Range{0, 1}, Range{0.1, 0.9});
         // vector<double> bins =
         bd.update_heights(normed_bins);

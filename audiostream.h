@@ -82,11 +82,11 @@ class AudioStream {
             data_size = ff_to_data();
             pos = file.tellg();
 
-            cout << "data_size: " << data_size << endl;
-            cout << "bytes_per_sample: " << bytes_per_sample << endl;
-            cout << "block_align: " << block_align << endl;
-            cout << "frames_per_chunk: " << frames_per_chunk << endl;
-            cout << "chunk_size: " << chunk_size << endl;
+            // cout << "data_size: " << data_size << endl;
+            // cout << "bytes_per_sample: " << bytes_per_sample << endl;
+            // cout << "block_align: " << block_align << endl;
+            // cout << "frames_per_chunk: " << frames_per_chunk << endl;
+            // cout << "chunk_size: " << chunk_size << endl;
         }
 
         AudioStream() {}
@@ -137,11 +137,11 @@ class AudioStream {
         WaveHeader read_header() {
             //Read the initial "RIFF" bytes
             string chunk_id = next_n_bytes(4);
-            cout << "chunk_id: " << chunk_id << endl;
+            // cout << "chunk_id: " << chunk_id << endl;
             uint64_t header_chunk_size = next_n_bytes_sizet<uint64_t>(4);
-            cout << "header_chunk_size: " << header_chunk_size << endl;
+            // cout << "header_chunk_size: " << header_chunk_size << endl;
             string format = next_n_bytes(4);
-            cout << "format: " << format << endl;
+            // cout << "format: " << format << endl;
             // cout << "at end of read_header, file.tell(): " << file.tellg() << endl;
             return WaveHeader{chunk_id, header_chunk_size, format};
         }
@@ -208,7 +208,7 @@ class AudioStream {
 
         vector<Frame> get_chunk_centered_at(uint64_t idx) {
             uint64_t start_idx = max(int(idx - (frames_per_chunk / 2)), 0);
-            uint64_t end_idx = min(start_idx + frames_per_chunk, stored_frames.size());
+            uint64_t end_idx = min(start_idx + frames_per_chunk, static_cast<uint64_t>(stored_frames.size()));
             cout << "chunk centered at: " << idx << " starts at: " << start_idx << " and ends at: " << end_idx << endl;
             vector<Frame> chunk(frames_per_chunk);
             // for (int i=start_idx; i<end_idx; ++i) {
