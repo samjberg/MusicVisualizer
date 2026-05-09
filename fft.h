@@ -8,6 +8,7 @@
 #include <vector>
 #include <complex>
 #include <cmath>
+#include <numbers>
 
 const double pi = std::numbers::pi;
 using namespace std;
@@ -105,27 +106,26 @@ inline numT mybit_and(double num, uint64_t with) {
 
 
 template<typename numT>
-inline numT get_bitreversed_index(numT idx) {
+inline numT get_bitreversed_index(numT idx, uint64_t bit_count) {
     //CAUTION.  numT here must be a normal integral numerical type (i.e. a type of int).  DO NOT use complex for numT for this function
-    string rev_binstr = to_reversed_bin(idx);
-    return from_bin<numT>(rev_binstr);
+    numT result = 0;
+    for (uint64_t i=0; i<bit_count; ++i) {
+        result <<= 1;
+        result |= (idx & 1);
+        idx >>= 1;
+    }
+    return result;
 }
 
 inline vector<complex<double>> do_bit_reversal(vector<complex<double>>& lst) {
-    vector<complex<double>> old_values(lst);
-    vector<int32_t> new_indices;
-    // old_values.reserve(lst.size());
-    new_indices.reserve(lst.size());
-    for (int i=0; i<lst.size(); i++) {
-        int32_t new_i = get_bitreversed_index<int32_t>(i);
-        new_indices[i] = new_i;
-        // old_values[i] = lst[i];
+    uint64_t n = lst.size();
+    uint64_t bit_count = static_cast<uint64_t>(log2(n));
+    vector<complex<double>> res(n);
+    for (uint64_t i=0; i<n; i++) {
+        uint64_t new_i = get_bitreversed_index<uint64_t>(i, bit_count);
+        res[new_i] = lst[i];
     }
-    for (int i=0; i<lst.size(); i++) {
-        lst[new_indices[i]] = old_values[i]; 
-        lst[i] = old_values[new_indices[i]];
-    }
-    return lst;
+    return res;
 }
 
 
@@ -134,27 +134,16 @@ inline vector<complex<double>> do_bit_reversal(vector<complex<double>>& lst) {
 //This function ONLY performs the actual cooley-turkey fft algorithm, it does NOTHING else
 //It does not create any bins, it just produces the raw output.
 inline vector<complex<double>> fft(vector<complex<double>>& a) {
-    auto n = static_cast<double>(a.size());
-    // vector<complex<double>> A(ni);
-    // for (int32_t i=0; i<ni; ++i) {
-    //     int32_t j = reverse_bits<int32_t>(i, log_n); 
-    //     A[j] = a[i];
-    // }
-
+    uint64_t n = a.size();
     vector<complex<double>> A = do_bit_reversal(a);
-    for (int i=0; i<10; ++i) {
-        cout << "n: " << n << endl;
-    }
-    for (uint64_t s=1; s < log2(n); ++s) {
-        // cout << "s: " << s << endl;
-        double m = pow(2, s);
-        // pi;
-        complex<double> wm = exp((-2.0 * pi * I)/double(m));
-        for (uint64_t k=0; k<n-1; k+=uint64_t(m)) {
+
+    for (uint64_t m=2; m<=n; m*=2) {
+        complex<double> wm = exp((-2.0 * pi * I)/static_cast<double>(m));
+        for (uint64_t k=0; k<n; k+=m) {
             complex<double> w(1.0, 0.0);
-            for (uint64_t j = 0; j<m/2; ++j) {
-                uint64_t idx1 = k+j+uint64_t(m)/2;
-                uint64_t idx2 = k+j;
+            for (uint64_t j=0; j<m/2; ++j) {
+                uint64_t idx1 = k + j + (m / 2);
+                uint64_t idx2 = k + j;
                 complex<double> t = w * A[idx1];
                 complex<double> u = A[idx2];
                 A[idx2] = u + t;
@@ -167,7 +156,7 @@ inline vector<complex<double>> fft(vector<complex<double>>& a) {
 }
 
 inline double calculate_power(complex<double> c) {
-    return sqrt(pow(c.real(), 2.0) + pow(c.imag(), 2.0));
+    return pow(c.real(), 2.0) + pow(c.imag(), 2.0);
 }
 
 inline double calculate_decibels(complex<double> c) {
