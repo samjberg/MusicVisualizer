@@ -34,8 +34,8 @@
 
 static SDL_Window *window = NULL;
 static SDL_Renderer *renderer = NULL;
-static double global_max = 0.01;
-static double global_min = 100.0;
+static double global_max = -1000.0;
+static double global_min = 1000.0;
 static double freq_min = 40.0;
 static double freq_max = 8000.0;
 static bool playing = true;
@@ -314,7 +314,7 @@ vector<double> create_log_bins(vector<Frame> chunk, uint64_t num_bins, double sa
         }
         double avg_power = sum/(end_idx-start_idx);
         avg_power = max(avg_power, 1e-12);
-        double normed_avg_power = norm_factor_multiplier * avg_power / (fft_size * fft_size);
+        double normed_avg_power = norm_factor_multiplier * avg_power / (fft_size);
         binned_vals.push_back(calculate_db_from_power(normed_avg_power));
     }
 
@@ -511,12 +511,13 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 
     int width = 800;
     int height = 600;
+    float render_scale = 4.0;
     Size screen_size{width, height};
-    ScreenInfo screen_info{screen_size, 4.0};
+    ScreenInfo screen_info{screen_size, render_scale};
     vector<Frame> chunk = audio_stream->read_next_chunk();
     // vector<double> chunk_power = fft_chunk_to_power_chunk(chunk);
     // vector<double> bins = fft_chunk_to_binned_decibels(chunk);
-    vector<double> bins = create_log_bins(chunk, num_bars, sample_rate, freq_min, freq_max);
+    vector<double> bins = create_log_bins(chunk, num_bars, sample_rate, freq_min, freq_max, 20.0);
     // vector<double> bins = fft_chunk_to_binned_power(chunk, num_bars);
     Range minmax = vecminmax(bins);
     double min_val = minmax.first;
@@ -673,7 +674,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         current_playhead = total_frames_sent - queued_frames;
         if ((current_playhead - last_update_pos) >= audio_stream->frames_per_chunk) {
             vector<Frame> curr_chunk = audio_stream->get_chunk_centered_at(current_playhead);
-            vector<double> bins = create_log_bins(curr_chunk, num_bars, sample_rate, freq_min, freq_max);
+            vector<double> bins = create_log_bins(curr_chunk, num_bars, sample_rate, freq_min, freq_max, 20.0);
             Pair<double> minmax = vecminmax(bins);
             double min_val = minmax.first;
             double max_val = minmax.second;
@@ -688,7 +689,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 global_min = min_val;
             }
             else {
-                global_min *= 0.99f;
+                global_min *= decay_factor;
             }
             vector<double> normed_bins = convert_vec_to_range(bins, Range{global_min, global_max}, Range{0.0, 1.0});
             bd.update_heights(normed_bins);

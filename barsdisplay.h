@@ -2,6 +2,7 @@
 #define BARSDISPLAY_H
 
 // #include "bar.h"
+#include <iostream>
 #include <algorithm>
 #include <cstdint>
 #include <vector>
@@ -78,8 +79,8 @@ class BarsDisplay {
             gradient = create_gradient(grad_info);
             lerp_t = 0.4;
         }
-        BarsDisplay(Size screen_size, std::vector<Bar> bars) : screen_size(screen_size), bars(bars) {
-            render_scale = 1.0;
+        BarsDisplay(Size screen_size, std::vector<Bar> bars, float r_scale=4.0) : screen_size(screen_size), bars(bars) {
+            render_scale = r_scale;
             screen_width  = screen_size.x;
             screen_height = screen_size.y;
             count = bars.size();
@@ -87,11 +88,12 @@ class BarsDisplay {
             lerp_t = 0.4;
         }
 
-        BarsDisplay(Size screen_size, int32_t count) : screen_size(screen_size), count(count) {
-            render_scale = 1.0;
+        BarsDisplay(Size screen_size, int32_t count, float r_scale=4.0) : screen_size(screen_size), count(count) {
+            render_scale = r_scale;
             screen_width = screen_size.x;
             screen_height = screen_size.y;
-            bars = std::vector<Bar>(count, Bar{0.0, Color(255, 0, 0, 255)});
+            bars = std::vector<Bar>(count, Bar{0.0, Color(0, 255, 0, 255)});
+            gradient = create_gradient(GREEN, RED, screen_height);
             lerp_t = 0.4;
         }
 
@@ -101,6 +103,9 @@ class BarsDisplay {
         void update_heights(std::vector<double> heights) {
             double t = lerp_t;//0.4; //time value for lerp
             for (int i=0; i<count; ++i) {
+                //I know this is hard to read.  It is just a ternary assignment statement where if the bar is rising (height[i]>bars[i].height)
+                //it uses a higher (faster) lerp value.  So the bar can jump up quickly.  If the bar is falling, then it uses the actual
+                //lerp_t member variable instead, which results in a much slower interpolation, so the bars fall slower than they rise
                 bars[i].height = heights[i]>bars[i].height ? 
                     mylerp(bars[i].height, std::clamp(heights[i], 0.0, 1.0), fmin(fmax(0.75, 1.0-lerp_t), 0.85)) : 
                     mylerp(bars[i].height, std::clamp(heights[i], 0.0, 1.0), lerp_t);
@@ -139,29 +144,16 @@ class BarsDisplay {
             return Rect{x/render_scale, y/render_scale, w/render_scale, h/render_scale};
         }
 
-        //Renders the entire BarsDisplay object
-        // void render(SDL_Renderer *renderer) {
-        //     for (int i=0; i<bars.size(); ++i) {
-        //         Rect rect = getRect(i);
-        //         uint8_t r = gradient[i].r;
-        //         uint8_t g = gradient[i].g;
-        //         uint8_t b = gradient[i].b;
-        //         uint8_t a = gradient[i].a;
-        //         SDL_SetRenderDrawColor(renderer, r, g, b, a);
-        //         SDL_RenderFillRect(renderer, &rect);
-        //
-        //     }
-        // }
 
         //gradient_style options are "vertical" for volume based gradient, and "horizontal" for a simple gradient across the bins
         void render(SDL_Renderer *renderer, std::string gradient_style="vertical") {
             for (int i=0; i<bars.size(); ++i) {
                 Rect rect = getRect(i);
-                uint64_t h = static_cast<uint64_t>(fmax(fmin(rect.h, screen_size.y-1), 0));
-                uint8_t r = gradient_style == "vertical" ? gradient[h].r : gradient[i].r;
-                uint8_t g = gradient_style == "vertical" ? gradient[h].g : gradient[i].g;
-                uint8_t b = gradient_style == "vertical" ? gradient[h].b : gradient[i].b;
-                uint8_t a = gradient_style == "vertical" ? gradient[h].a : gradient[i].a;
+                uint64_t color_height = static_cast<uint64_t>(bars[i].height * (gradient.size()-1));
+                uint8_t r = gradient_style == "vertical" ? gradient[color_height].r : gradient[i].r;
+                uint8_t g = gradient_style == "vertical" ? gradient[color_height].g : gradient[i].g;
+                uint8_t b = gradient_style == "vertical" ? gradient[color_height].b : gradient[i].b;
+                uint8_t a = gradient_style == "vertical" ? gradient[color_height].a : gradient[i].a;
                 SDL_SetRenderDrawColor(renderer, r, g, b, a);
                 SDL_RenderFillRect(renderer, &rect);
 
@@ -179,14 +171,6 @@ class BarsDisplay {
         std::vector<float> prev_heights;
         Gradient gradient; //the gradient used across the bars (horizontally) to determine bar color
         
-
-        std::vector<double>& clamp_heights(std::vector<double>& heights_vec) {
-            for (int i=0; i<heights_vec.size(); ++i) {
-                heights_vec[i] = std::clamp(heights_vec[i], 0.0, 1.0);
-            }
-            return heights_vec;
-        }
-
 
 };
 
