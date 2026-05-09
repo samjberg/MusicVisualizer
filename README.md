@@ -20,11 +20,8 @@ I was going to write that there is a problem where it only works on Windows and 
 
 * #### Then to run it:
 
-    * ./build/music\_visualizer.exe
-
-Or on a unix-like system
-
-* ./build/music\_visualizer.exe
+    * ./build/music\_visualizer.exe (on windows)
+    * ./build/music\_visualizer (on basically any other OS)
 
 
 ## Currently supported command line flags
