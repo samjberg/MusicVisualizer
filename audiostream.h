@@ -57,7 +57,7 @@ class AudioStream {
                              //It represents the size in bytes to be read for each "frame"/update of the visualizer display.
                              //It is these chunks that will get fed into the fft
         AudioStream(fs::path path, uint64_t frames_per_chunk) : frames_per_chunk(frames_per_chunk) {
-            file = ifstream(path, ios_base::binary);
+            file = new ifstream(path, ios_base::binary);
             WaveHeader header = read_header();
             Chunk fmt = read_fmt_chunk();
             num_channels = fmt.num_channels;
@@ -70,7 +70,7 @@ class AudioStream {
             bytes_per_frame = bits_per_frame / 8;
             chunk_size = frames_per_chunk * bytes_per_frame;
             data_size = ff_to_data();
-            pos = file.tellg();
+            pos = file->tellg();
 
         }
 
@@ -78,8 +78,8 @@ class AudioStream {
 
 
         ~AudioStream() {
-            if (file.is_open()) {
-                file.close();
+            if (file->is_open()) {
+                file->close();
             }
         }
 
@@ -87,7 +87,7 @@ class AudioStream {
         char* next_n_bytes(uint64_t n) {
             //we never read more than 16 bytes
             char *buff = new char[n+1];
-            file.read(buff, n);
+            file->read(buff, n);
             buff[n] = '\0';
             return buff;
         }
@@ -122,7 +122,7 @@ class AudioStream {
             // cout << "header_chunk_size: " << header_chunk_size << endl;
             string format = next_n_bytes(4);
             // cout << "format: " << format << endl;
-            // cout << "at end of read_header, file.tell(): " << file.tellg() << endl;
+            // cout << "at end of read_header, file->tell(): " << file->tellg() << endl;
             return WaveHeader{chunk_id, header_chunk_size, format};
         }
 
@@ -140,14 +140,14 @@ class AudioStream {
 
 
         uint64_t ff_to_data() {
-            cout << "Stream pos at beginning of ff_to_data: " << file.tellg() << endl;
+            cout << "Stream pos at beginning of ff_to_data: " << file->tellg() << endl;
             string word = "data";
             char c[2];
             c[1] = '\0';
             int16_t i = 0;
             while (c[0] != 'd') {
                 // cout << i << endl;
-                file.read(c, 1);
+                file->read(c, 1);
                 i++;
                 if (i > 1000) {
                     cout << "FAILED TO FIND d" << endl;
@@ -157,7 +157,7 @@ class AudioStream {
             string s = next_n_bytes(3);
             if (s == "ata") {
                 uint32_t datasize;
-                file.read(reinterpret_cast<char*>(&datasize), 4);
+                file->read(reinterpret_cast<char*>(&datasize), 4);
                 return datasize;
             }
             return 0;
@@ -186,32 +186,126 @@ class AudioStream {
             return frames;
         }
 
+        // vector<Frame> get_chunk_centered_at(uint64_t idx) {
+        //     uint64_t start_idx = max(int(idx - (frames_per_chunk / 2)), 0);
+        //     uint64_t end_idx = min(start_idx + frames_per_chunk, static_cast<uint64_t>(stored_frames.size()));
+        //     // cout << "chunk centered at: " << idx << " starts at: " << start_idx << " and ends at: " << end_idx << endl;
+        //     vector<Frame> chunk(frames_per_chunk);
+        //     // for (int i=start_idx; i<end_idx; ++i) {
+        //     //     chunk[i-start_idx] = stored_frames[i];
+        //     // }
+        //     for (int i=0; i<frames_per_chunk; ++i) {
+        //         chunk[i] = stored_frames[i + start_idx];
+        //     }
+        //     return chunk;
+        // }
+
         vector<Frame> get_chunk_centered_at(uint64_t idx) {
-            uint64_t start_idx = max(int(idx - (frames_per_chunk / 2)), 0);
+            // uint64_t start_idx = max(idx - (frames_per_chunk / 2), static_cast<uint64_t>(0));
+            uint64_t start_idx = (idx > (frames_per_chunk / 2)) ? (idx - (frames_per_chunk / 2)) : 0;
             uint64_t end_idx = min(start_idx + frames_per_chunk, static_cast<uint64_t>(stored_frames.size()));
-            cout << "chunk centered at: " << idx << " starts at: " << start_idx << " and ends at: " << end_idx << endl;
+            // cout << "chunk centered at: " << idx << " starts at: " << start_idx << " and ends at: " << end_idx << endl;
             vector<Frame> chunk(frames_per_chunk);
-            // for (int i=start_idx; i<end_idx; ++i) {
-            //     chunk[i-start_idx] = stored_frames[i];
-            // }
-            for (int i=0; i<frames_per_chunk; ++i) {
-                chunk[i] = stored_frames[i + start_idx];
+            for (int i=start_idx; i<end_idx; ++i) {
+                chunk[i-start_idx] = stored_frames[i];
             }
             return chunk;
         }
 
+        void seek(int64_t n) {
+
+            cout << "[seek] enter n=" << n
+                 << " good=" << file->good()
+                 << " eof=" << file->eof()
+                 << " fail=" << file->fail()
+                 << " bad=" << file->bad()
+                 << endl;
+            auto before = file->tellg();
+            cout << "[seek] tellg before seek=" << before
+                 << " good=" << file->good()
+                 << " eof=" << file->eof()
+                 << " fail=" << file->fail()
+                 << " bad=" << file->bad()
+                 << endl;
+            file->seekg(n, ios_base::cur);
+            auto after = file->tellg();
+            cout << "[seek] tellg after seek=" << after
+                 << " good=" << file->good()
+                 << " eof=" << file->eof()
+                 << " fail=" << file->fail()
+                 << " bad=" << file->bad()
+                 << endl;
+        }
+
         //Seek forward n bytes from current stream pos in file
-        void seek_forward(uint64_t n) {
-            file.seekg(n, ios_base::cur);
+        void seek_forward(int64_t n) {
+            file->seekg(n, ios_base::cur);
         }
 
         //Seek backwards n bytes from current stream pos in file
-        void seek_backwards(uint64_t n) {
-            file.seekg(-n, ios_base::cur);
+        void seek_backwards(int64_t n) {
+            streamoff offset = static_cast<streamoff>(n);
+            file->seekg(-offset, ios_base::cur);
         }
 
-        void seek_to_pos(uint64_t n) {
-            file.seekg(n, ios_base::beg);
+        void seek_to_pos(int64_t n) {
+            file->seekg(n, ios_base::beg);
+        }
+
+        //Fast forward the stream by `seconds` seconds
+        void ff_seconds(double seconds) {
+
+            cout << "[ff_seconds] enter seconds=" << seconds
+                 << " good=" << file->good()
+                 << " eof=" << file->eof()
+                 << " fail=" << file->fail()
+                 << " bad=" << file->bad()
+                 << endl;
+            auto pos = file->tellg();
+            cout << "[ff_seconds] tellg before seek=" << pos
+                 << " good=" << file->good()
+                 << " eof=" << file->eof()
+                 << " fail=" << file->fail()
+                 << " bad=" << file->bad()
+                 << endl;
+            int64_t num_bytes = seconds * sample_rate * bytes_per_frame;
+            cout << "[ff_seconds] byte offset=" << num_bytes << endl;
+            seek_forward(num_bytes);
+            auto after = file->tellg();
+            cout << "[ff_seconds] tellg after seek=" << after
+                 << " good=" << file->good()
+                 << " eof=" << file->eof()
+                 << " fail=" << file->fail()
+                 << " bad=" << file->bad()
+                 << endl;
+        }
+
+        //Rewind the stream by `seconds` seconds
+        void rewind_seconds(double seconds) {
+
+            cout << "[rewind_seconds] enter seconds=" << seconds
+                 << " good=" << file->good()
+                 << " eof=" << file->eof()
+                 << " fail=" << file->fail()
+                 << " bad=" << file->bad()
+                 << endl;
+            auto pos = file->tellg();
+            cout << "[rewind_seconds] tellg before seek=" << pos
+                 << " good=" << file->good()
+                 << " eof=" << file->eof()
+                 << " fail=" << file->fail()
+                 << " bad=" << file->bad()
+                 << endl;
+            int64_t num_bytes = static_cast<int64_t>(seconds * sample_rate * bytes_per_frame);
+            cout << "[rewind_seconds] byte offset=" << -num_bytes << endl;
+            seek(-num_bytes);
+            auto after = file->tellg();
+            cout << "[rewind_seconds] tellg after seek=" << after
+                 << " good=" << file->good()
+                 << " eof=" << file->eof()
+                 << " fail=" << file->fail()
+                 << " bad=" << file->bad()
+                 << endl;
         }
 
         uint64_t num_stored_frames() {
@@ -219,13 +313,13 @@ class AudioStream {
         }
 
         void close() {
-            file.close();
+            file->close();
         }
 
 
 
     private:
-        ifstream file;
+        ifstream *file;
         vector<Frame> stored_frames;
         uint64_t pos;
 

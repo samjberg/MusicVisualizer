@@ -150,7 +150,7 @@ inline Gradient create_gradient(GradientInfo info) {
     //direction = (end - start) / len.  It acts as a vector pointing from start to end, with a magnitude such that it will take len steps
     //to traverse all the way from start to end.  Exactly what we want for a gradient
     ColorF direction = subtract_colors(ColorF(end), ColorF(start)) / len;
-    for (int i=1; i<len-1; ++i) {
+    for (int i=1; i<len; ++i) {
         curr_color = sanitize_colorf(curr_color + direction);
         gradient[i] = Color(uint8_t(curr_color.r), uint8_t(curr_color.g), uint8_t(curr_color.b), uint8_t(curr_color.a));
     }

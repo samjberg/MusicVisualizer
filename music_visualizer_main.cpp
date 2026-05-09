@@ -17,6 +17,7 @@
 #include "SDL3/SDL_init.h"
 #include "SDL3/SDL_render.h"
 #include <SDL3/SDL_audio.h>
+#include "SDL3/SDL_scancode.h"
 #include "audiostream.h"
 #include <complex>
 #include <SDL3/SDL_rect.h>
@@ -412,6 +413,13 @@ Size get_screen_size() {
     return Size{w, h};
 }
 
+bool put_audiostream_data(vector<Frame> chunk) {
+    float* buff = chunk_to_float32_buff(chunk);
+    bool res = SDL_PutAudioStreamData(sdl_audio_stream, buff, audio_stream->frames_per_chunk * sizeof(float) * audio_stream->num_channels);
+    delete[] buff;
+    return res;
+}
+
 /* This function runs once at startup. */
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 {
@@ -609,6 +617,18 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
         else if (event->key.key == ' ') {
             playing = !playing;
         }
+        else if (event->key.scancode == SDL_SCANCODE_LEFT) {
+            //User hit left arrow key, rewind stream 5 seconds
+            audio_stream->rewind_seconds(2.5);
+            SDL_ClearAudioStream(sdl_audio_stream);
+
+        }
+        else if (event->key.scancode == SDL_SCANCODE_RIGHT) {
+            //User hit left arrow key, rewind stream 5 seconds
+            audio_stream->ff_seconds(2.5);
+            SDL_ClearAudioStream(sdl_audio_stream);
+
+        }
     }
     else if (event->type == SDL_EVENT_WINDOW_RESIZED) {
         Size new_screen_size = get_screen_size();
@@ -644,20 +664,16 @@ SDL_AppResult SDL_AppIterate(void *appstate)
             SDL_ResumeAudioStreamDevice(sdl_audio_stream);
         }
         vector<Frame> chunk = audio_stream->read_next_chunk();
-        float* buff = chunk_to_float32_buff(chunk);
-        SDL_PutAudioStreamData(sdl_audio_stream, buff, audio_stream->frames_per_chunk * sizeof(float) * audio_stream->num_channels);
+        put_audiostream_data(chunk);
+        // float* buff = chunk_to_float32_buff(chunk);
+        // SDL_PutAudioStreamData(sdl_audio_stream, buff, audio_stream->frames_per_chunk * sizeof(float) * audio_stream->num_channels);
         total_frames_sent += chunk.size();
         uint64_t queued_bytes = static_cast<uint64_t>(SDL_GetAudioStreamQueued(sdl_audio_stream));
         uint64_t queued_frames = queued_bytes / (sizeof(float) * audio_stream->num_channels);
         current_playhead = total_frames_sent - queued_frames;
         if ((current_playhead - last_update_pos) >= audio_stream->frames_per_chunk) {
             vector<Frame> curr_chunk = audio_stream->get_chunk_centered_at(current_playhead);
-            // cout << "chunk centered at current_playhead: " << current_playhead << " has length: " << curr_chunk.size();
-            // vector<double> bins = fft_chunk_to_binned_power(curr_chunk, num_bars);
-            // vector<double> bins = fft_chunk_to_binned_decibels(curr_chunk, num_bars);
             vector<double> bins = create_log_bins(curr_chunk, num_bars, sample_rate, freq_min, freq_max);
-            // vector<double> bins = divide_vector(bins_db, static_cast<double>(global_max - global_min));
-            // Pair<double> minmax = vecminmax(db_bins);
             Pair<double> minmax = vecminmax(bins);
             double min_val = minmax.first;
             double max_val = minmax.second;
@@ -675,17 +691,13 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 global_min *= 0.99f;
             }
             vector<double> normed_bins = convert_vec_to_range(bins, Range{global_min, global_max}, Range{0.0, 1.0});
-            // vector<double> normed_bins = convert_vec_to_range(bins, Range{-20.0, 60.0}, Range{0.0, 1.0});
-            // vector<double> adjusted_bins = convert_vec_to_range(normed_bins, Range{0, 1}, Range{0.1, 0.9});
-            // vector<double> bins =
             bd.update_heights(normed_bins);
-            // bd.update_heights(divide_vector(bins, global_max));
             last_update_pos = current_playhead;
         }
         // else {
         //     bd.decay_heights(0.99f);
         // }
-        delete[] buff;
+        // delete[] buff;
     }
     else {
         SDL_PauseAudioStreamDevice(sdl_audio_stream);
