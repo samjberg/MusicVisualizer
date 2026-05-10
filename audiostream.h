@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <vector>
+#include <map>
 #include <cstdint>
 #include <fstream>
 #include <filesystem>
@@ -47,10 +48,21 @@ inline float* chunk_to_float32_buff(std::vector<Frame> chunk) {
 }
 
 
+inline int16_t bytes16_to_int(const char* buff, bool little_endian=true) {
+    return n_bytes_to_int<int16_t>(buff, 2);
+}
+
+inline int16_t bytes24_to_int(const char* buff, bool little_endian=true) {
+    return n_bytes_to_int<int32_t>(buff, 3);
+}
+
+// map<int32_t, 
+
 
 class AudioStream {
     public:
         uint64_t data_size;
+        double normalization_divisor;
         uint64_t num_channels, sample_rate, byte_rate, block_align, bits_per_sample;
         uint64_t bytes_per_sample, bits_per_frame, bytes_per_frame, frames_per_chunk;
         uint64_t chunk_size; //This is the size of a streaming chunk.  NOT an actual wav chunk, like header, fmt, list, data.
@@ -71,6 +83,7 @@ class AudioStream {
             chunk_size = frames_per_chunk * bytes_per_frame;
             data_size = ff_to_data();
             pos = file->tellg();
+            normalization_divisor = 2 << (bits_per_sample - 2);
 
         }
 
@@ -99,19 +112,41 @@ class AudioStream {
             return n_bytes_to_int<numT>(s, n);
         }
 
-        //reads the next sample in the stream, automatically handling different int widths, and returns as a normalized double
-        double read_as_normalized_double() {
+        template <typename numT>
+        double as_normalized_double(numT sample) {
             if (bits_per_sample == 16) {
-                int16_t val = next_n_bytes_sizet<int16_t>(2);
-                return static_cast<double>(val) / 32786.0; //32786 is 2^16 / 2
+                return static_cast<double>(sample) / 32786.0;
             }
             else if (bits_per_sample == 24) {
-                int32_t val = next_n_bytes_sizet<int32_t>(3);
-                return static_cast<double>(val) / 8388608.0; //8388608 is 2^24 / 2
+                return static_cast<double>(sample) / 8388608.0; //8388608 is 2^24 / 2
             }
             return 0.0;
         }
 
+        //reads the next sample in the stream, automatically handling different int widths, and returns as a normalized double
+        // double read_as_normalized_double() {
+        //     if (bits_per_sample == 16) {
+        //         int16_t val = next_n_bytes_sizet<int16_t>(2);
+        //         return static_cast<double>(val) / 32786.0; //32786 is 2^16 / 2
+        //     }
+        //     else if (bits_per_sample == 24) {
+        //         int32_t val = next_n_bytes_sizet<int32_t>(3);
+        //         return static_cast<double>(val) / 8388608.0; //8388608 is 2^24 / 2
+        //     }
+        //     return 0.0;
+        // }
+
+        double read_as_normalized_double() {
+            if (bits_per_sample == 16) {
+                int16_t val = next_n_bytes_sizet<int16_t>(bytes_per_sample);
+                return static_cast<double>(val) / normalization_divisor;
+            }
+            else if (bits_per_sample == 24) {
+                int32_t val = next_n_bytes_sizet<int32_t>(bytes_per_sample);
+                return static_cast<double>(val) / normalization_divisor;
+            }
+            return 0.0;
+        }
 
 
         WaveHeader read_header() {
@@ -163,42 +198,78 @@ class AudioStream {
             return 0;
         }
 
-
         Frame next_frame() {
-            vector<double> vals(num_channels);
-            for (int i=0; i<num_channels; ++i) {
-                vals[i] = read_as_normalized_double();
+            uint64_t curr_frame_idx = pos / bytes_per_frame;
+            if (curr_frame_idx >= stored_frames.size()) {
+                vector<double> vals(num_channels);
+                for (int i=0; i<num_channels; ++i) {
+                    vals[i] = read_as_normalized_double();
+                }
+                Frame frame(num_channels, vals);
+                stored_frames.push_back(frame);
+                pos += bytes_per_frame;
+                return frame;
+
             }
-            Frame frame(num_channels, vals);
-            stored_frames.push_back(frame);
-            return frame;
+            else {
+                pos += bytes_per_frame;
+                return stored_frames[curr_frame_idx];
+            }
         }
 
 
+        vector<Frame> next_n_frames(uint64_t n) {
+            uint64_t total_bytes = n * bytes_per_frame;
+            uint64_t frame_idx = pos / bytes_per_frame;
+            vector<Frame> next_frames(n);
+
+            if ((frame_idx+n) <= stored_frames.size()) {
+                for (int i=0; i<n; ++i) {
+                    cout << "IN IF STATEMENT IN IF STATEMENT IN IF STATEMENT!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!" << endl;
+                    next_frames[i] = stored_frames[frame_idx];
+                    frame_idx++;
+                }
+                pos = frame_idx * bytes_per_frame;
+                return next_frames;
+            }
+
+            char* buff = next_n_bytes(total_bytes);
+            for (int i=0; i<total_bytes; i+=bytes_per_frame) {
+                vector<double> frame_channels(num_channels);
+                for (int c=0; c<num_channels; ++c) {
+                    uint64_t offset = i + (c * bytes_per_sample);
+                    if (bits_per_sample == 16) {
+                        frame_channels[c] = as_normalized_double(n_bytes_to_int<int16_t>(buff + offset, bytes_per_sample));
+                    }
+                    else if (bits_per_sample == 24) {
+                        frame_channels[c] = as_normalized_double(n_bytes_to_int<int32_t>(buff + offset, bytes_per_sample));
+                    }
+                }
+                Frame frame = Frame(num_channels, frame_channels);;
+                next_frames[i/bytes_per_frame] = frame;
+                stored_frames.push_back(frame);
+                pos += bytes_per_frame;
+            }
+            delete[] buff;
+            return next_frames;
+        }
+
+        
 
         vector<Frame> read_next_chunk() {
-            // uint64_t frames_per_chunk = chunk_size / bytes_per_frame;
-            vector<Frame> frames(frames_per_chunk);
-            // while (i < frames_per_chunk) {
-            for (int i=0; i<frames_per_chunk; i++) {
-                frames[i] = next_frame();
-            }
-            return frames;
+            return next_n_frames(frames_per_chunk);
         }
 
-        // vector<Frame> get_chunk_centered_at(uint64_t idx) {
-        //     uint64_t start_idx = max(int(idx - (frames_per_chunk / 2)), 0);
-        //     uint64_t end_idx = min(start_idx + frames_per_chunk, static_cast<uint64_t>(stored_frames.size()));
-        //     // cout << "chunk centered at: " << idx << " starts at: " << start_idx << " and ends at: " << end_idx << endl;
-        //     vector<Frame> chunk(frames_per_chunk);
-        //     // for (int i=start_idx; i<end_idx; ++i) {
-        //     //     chunk[i-start_idx] = stored_frames[i];
-        //     // }
-        //     for (int i=0; i<frames_per_chunk; ++i) {
-        //         chunk[i] = stored_frames[i + start_idx];
+        // vector<Frame> read_next_chunk() {
+        //     // uint64_t frames_per_chunk = chunk_size / bytes_per_frame;
+        //     vector<Frame> frames(frames_per_chunk);
+        //     // while (i < frames_per_chunk) {
+        //     for (int i=0; i<frames_per_chunk; i++) {
+        //         frames[i] = next_frame();
         //     }
-        //     return chunk;
+        //     return frames;
         // }
+
 
         vector<Frame> get_chunk_centered_at(uint64_t idx) {
             // uint64_t start_idx = max(idx - (frames_per_chunk / 2), static_cast<uint64_t>(0));
@@ -210,6 +281,11 @@ class AudioStream {
                 chunk[i-start_idx] = stored_frames[i];
             }
             return chunk;
+        }
+
+        uint64_t curr_pos() {
+            return static_cast<uint64_t>(file->tellg());
+
         }
 
         void seek(int64_t n) {
@@ -261,7 +337,6 @@ class AudioStream {
                  << " fail=" << file->fail()
                  << " bad=" << file->bad()
                  << endl;
-            auto pos = file->tellg();
             cout << "[ff_seconds] tellg before seek=" << pos
                  << " good=" << file->good()
                  << " eof=" << file->eof()
@@ -278,18 +353,13 @@ class AudioStream {
                  << " fail=" << file->fail()
                  << " bad=" << file->bad()
                  << endl;
+            pos = file->tellg();
         }
 
         //Rewind the stream by `seconds` seconds
         void rewind_seconds(double seconds) {
 
-            cout << "[rewind_seconds] enter seconds=" << seconds
-                 << " good=" << file->good()
-                 << " eof=" << file->eof()
-                 << " fail=" << file->fail()
-                 << " bad=" << file->bad()
-                 << endl;
-            auto pos = file->tellg();
+            // auto pos = file->tellg();
             cout << "[rewind_seconds] tellg before seek=" << pos
                  << " good=" << file->good()
                  << " eof=" << file->eof()
@@ -306,6 +376,7 @@ class AudioStream {
                  << " fail=" << file->fail()
                  << " bad=" << file->bad()
                  << endl;
+            pos = file->tellg();
         }
 
         uint64_t num_stored_frames() {

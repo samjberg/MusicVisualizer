@@ -34,14 +34,15 @@
 
 static SDL_Window *window = NULL;
 static SDL_Renderer *renderer = NULL;
-static double global_max = -1000.0;
-static double global_min = 1000.0;
-static double freq_min = 40.0;
-static double freq_max = 8000.0;
-static bool playing = true;
-static uint64_t sample_rate = 44100;
-static uint64_t frames_per_chunk = 2048;
-static string gradient_style = "vertical";
+static double global_max = -1000.0;         //min sample value found.  This default gets overridden at initialization, it for safety
+static double global_min = 1000.0;          //max sample value found.  This default gets overridden at initialization, it for safety
+static double freq_min = 40.0;              //minimum frequency displayed in the bar visualization
+static double freq_max = 8000.0;            //maximum frequency displayed in the bar visualization
+static double skip_duration = 2.5;          //Number of seconds per fastforward/rewind
+static bool playing = true;                 //Whether or not the audio (and accompanying visuals) is currently playing
+static uint64_t sample_rate = 44100;        //The sample rate
+static uint64_t frames_per_chunk = 2048;    //Number of audio frames read and processed per visual frame (chunk)
+static string gradient_style = "vertical";  //Orientation of the color gradient on the bars
 int actual_screen_width = 0;
 int actual_screen_height = 0;
 float* paused_data_buffer;
@@ -564,7 +565,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         float power = bins[i] / global_max;
         // float normed_height = 
 
-        cout << "freq_data[i]: " << freq_data[i] << endl;
+        cout << "freq_data[" <<  i << "]:" << freq_data[i] << endl;
         cout << "power: " << power << endl;
         cout << "db: " << decibels << endl;
         Color c = colors[i%3];
@@ -664,12 +665,16 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         if (SDL_AudioStreamDevicePaused(sdl_audio_stream)) {
             SDL_ResumeAudioStreamDevice(sdl_audio_stream);
         }
-        vector<Frame> chunk = audio_stream->read_next_chunk();
-        put_audiostream_data(chunk);
+        uint64_t queued_bytes = static_cast<uint64_t>(SDL_GetAudioStreamQueued(sdl_audio_stream));
+
+        uint64_t ff_buffer_size = audio_stream->bytes_per_frame * audio_stream->sample_rate * 2.5;
+        if (queued_bytes < (audio_stream->chunk_size / 2)){//(audio_stream->frames_per_chunk * audio_stream->bytes_per_frame)/2) {
+            vector<Frame> chunk = audio_stream->read_next_chunk();
+            put_audiostream_data(chunk);
+            total_frames_sent += chunk.size();
+        }
         // float* buff = chunk_to_float32_buff(chunk);
         // SDL_PutAudioStreamData(sdl_audio_stream, buff, audio_stream->frames_per_chunk * sizeof(float) * audio_stream->num_channels);
-        total_frames_sent += chunk.size();
-        uint64_t queued_bytes = static_cast<uint64_t>(SDL_GetAudioStreamQueued(sdl_audio_stream));
         uint64_t queued_frames = queued_bytes / (sizeof(float) * audio_stream->num_channels);
         current_playhead = total_frames_sent - queued_frames;
         if ((current_playhead - last_update_pos) >= audio_stream->frames_per_chunk) {
@@ -735,4 +740,5 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 /* This function runs once at shutdown. */
 void SDL_AppQuit(void *appstate, SDL_AppResult result)
 {
+    cout << "normalization_divisor: " << audio_stream->normalization_divisor << endl;
 }
