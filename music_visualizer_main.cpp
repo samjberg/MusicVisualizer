@@ -15,6 +15,7 @@
 #include "SDL3/SDL_events.h"
 // #include "SDL3/SDL_oldnames.h"
 #include "SDL3/SDL_init.h"
+#include "SDL3/SDL_oldnames.h"
 #include "SDL3/SDL_render.h"
 #include <SDL3/SDL_audio.h>
 #include "SDL3/SDL_scancode.h"
@@ -60,6 +61,9 @@ uint64_t total_frames_sent = 0; //total number of frames SENT to the audio devic
 uint64_t last_update_pos = 0;
 uint64_t current_playhead = 0;
 uint64_t num_bars = 32;
+double max_queued_chunks = 4.0;
+double max_queued_frames = 0.0;
+double max_queued_bytes = 0.0;
 fs::path project_root;
 
 namespace fs = std::filesystem;
@@ -416,7 +420,7 @@ Size get_screen_size() {
 
 bool put_audiostream_data(vector<Frame> chunk) {
     float* buff = chunk_to_float32_buff(chunk);
-    bool res = SDL_PutAudioStreamData(sdl_audio_stream, buff, audio_stream->frames_per_chunk * sizeof(float) * audio_stream->num_channels);
+    bool res = SDL_PutAudioStreamData(sdl_audio_stream, buff, chunk.size() * sizeof(float) * audio_stream->num_channels);
     delete[] buff;
     return res;
 }
@@ -470,6 +474,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         freq_max = stoull(short_flags["maxfreq"]);
     }
 
+    if (contains<string>(short_flag_names, "mqc")) {
+        max_queued_chunks = stod(short_flags["mqc"]);
+    }
+
     float lerp_t = 0.4;
 
     if (contains<string>(short_flag_names, "l")) {
@@ -487,6 +495,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 
     audio_stream = new AudioStream(cwd/argpath, frames_per_chunk);
     sample_rate = audio_stream->sample_rate;
+    max_queued_bytes = max_queued_chunks * audio_stream->bytes_per_frame * audio_stream->frames_per_chunk;
 
     SDL_AudioDeviceID dev = SDL_OpenAudioDevice(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, NULL);
     if (dev == 0) {
@@ -515,7 +524,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     float render_scale = 4.0;
     Size screen_size{width, height};
     ScreenInfo screen_info{screen_size, render_scale};
+    cout << "BEFORE FIRST READ" << endl;
     vector<Frame> chunk = audio_stream->read_next_chunk();
+    cout << "AFTER FIRST READ" << endl;
     // vector<double> chunk_power = fft_chunk_to_power_chunk(chunk);
     // vector<double> bins = fft_chunk_to_binned_decibels(chunk);
     vector<double> bins = create_log_bins(chunk, num_bars, sample_rate, freq_min, freq_max, 20.0);
@@ -554,7 +565,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     cout << "max_val: " << max_val << endl;
     cout << "max_power: " << max_power << endl;
     std::vector<Bar> bars;
-    std::vector<Color> colors = {Color{255, 0, 0, 255}, Color{0, 255, 0, 255}, Color{0, 0, 255, 255}};
+    Gradient colors = {Color{255, 0, 0, 255}, Color{0, 255, 0, 255}, Color{0, 0, 255, 255}};
     vector<double> normed_bins = convert_vec_to_range(bins, Range{global_min, global_max}, Range{0.0, 1.0});
     // for (int i=0; i<100; i++) {//vals.size(); i++) {
     for (int i=0; i<bins.size(); ++i) {
@@ -571,7 +582,13 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         Color c = colors[i%3];
         bars.push_back(Bar{float(normed_bins[i]), c});
     }
-    bd = gradient_style == "horizontal" ? BarsDisplay(screen_info, bars) : BarsDisplay(screen_info, bars, GradientInfo{GREEN, RED, static_cast<uint64_t>(screen_info.screen_size.y)});
+    if (gradient_style == "horizontal") {
+        bd = BarsDisplay(screen_info, bars);
+    }
+    else {
+        bd = BarsDisplay(screen_info, bars, GradientInfo{GREEN, RED, static_cast<uint64_t>(height)});
+    }
+    // bd = gradient_style == "horizontal" ? BarsDisplay(screen_info, bars) : BarsDisplay(screen_info, bars, GradientInfo{GREEN, RED, static_cast<uint64_t>(screen_info.screen_size.y)});
     bd.lerp_t = lerp_t;
     bd.update_heights(normed_bins);
     
@@ -603,32 +620,20 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
             cout << "sample_rate: " << sample_rate << endl;
             return SDL_APP_SUCCESS;
         }
-        else if (event->key.key == 'd') {
-            vector<Frame> chunk = audio_stream->read_next_chunk();
-            vector<double> bins = fft_chunk_to_binned_power(chunk);
-            double max_val = vecmax(bins);
-            if (max_val > global_max) {
-                global_max = max_val;
-            }
-            else {
-                global_max *= 0.99f;
-            }
-            bd.update_heights(divide_vector(bins, max_val));
-
-        }
         else if (event->key.key == ' ') {
             playing = !playing;
         }
         else if (event->key.scancode == SDL_SCANCODE_LEFT) {
             //User hit left arrow key, rewind stream 5 seconds
-            audio_stream->rewind_seconds(2.5);
             SDL_ClearAudioStream(sdl_audio_stream);
+            audio_stream->rewind_seconds(2.5);
+
 
         }
         else if (event->key.scancode == SDL_SCANCODE_RIGHT) {
             //User hit left arrow key, rewind stream 5 seconds
-            audio_stream->ff_seconds(2.5);
             SDL_ClearAudioStream(sdl_audio_stream);
+            audio_stream->ff_seconds(2.5);
 
         }
     }
@@ -668,7 +673,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         uint64_t queued_bytes = static_cast<uint64_t>(SDL_GetAudioStreamQueued(sdl_audio_stream));
 
         uint64_t ff_buffer_size = audio_stream->bytes_per_frame * audio_stream->sample_rate * 2.5;
-        if (queued_bytes < (audio_stream->chunk_size / 2)){//(audio_stream->frames_per_chunk * audio_stream->bytes_per_frame)/2) {
+        if (queued_bytes < max_queued_bytes) {
             vector<Frame> chunk = audio_stream->read_next_chunk();
             put_audiostream_data(chunk);
             total_frames_sent += chunk.size();
@@ -740,5 +745,6 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 /* This function runs once at shutdown. */
 void SDL_AppQuit(void *appstate, SDL_AppResult result)
 {
-    cout << "normalization_divisor: " << audio_stream->normalization_divisor << endl;
+    cout << "normalization_multiplier: " << audio_stream->normalization_multiplier << endl;
+    cout << "max queued chunks: " << max_queued_chunks << endl;
 }
