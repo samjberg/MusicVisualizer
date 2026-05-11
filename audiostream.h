@@ -98,8 +98,7 @@ class AudioStream {
                 return buff;
             }
             //Seek to start
-            fpos<int> start_pos(start);
-            file->seekg(start_pos);
+            file->seekg(start);
             char* buff = new char[n+1];
             file->read(buff, n);
             buff[n] = '\0';
@@ -215,7 +214,7 @@ class AudioStream {
 
             if (frame_idx < stored_frames.size()) {
                 uint64_t start_idx = frame_idx;
-                uint64_t stop_idx = min((frame_idx+n)/bytes_per_frame, stored_frames.size());
+                uint64_t stop_idx = min((frame_idx+n)/bytes_per_frame, static_cast<uint64_t>(stored_frames.size()));
                 while (frame_idx < stop_idx) {
                     cout << "IN IF STATEMENT IN IF STATEMENT IN IF STATEMENT!!!!!" << endl;
                     next_frames[frame_idx-start_idx] = stored_frames[frame_idx];
