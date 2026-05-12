@@ -53,10 +53,12 @@ struct ColorF {
 
 typedef std::vector<Color> Gradient;
 
+
 struct GradientInfo {
-    Color start;
-    Color end;
+    Color start; //Color at the start of the gradient
+    Color end;  //Color at the end of the gradient
     uint64_t len;
+    std::string style;
 
 };
 

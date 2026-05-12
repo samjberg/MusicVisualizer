@@ -33,31 +33,33 @@
 #include "fft.h"
 #include "parseargs.h"
 
-static SDL_Window *window = NULL;
-static SDL_Renderer *renderer = NULL;
-static double global_max = -1000.0;         //min sample value found.  This default gets overridden at initialization, it for safety
-static double global_min = 1000.0;          //max sample value found.  This default gets overridden at initialization, it for safety
-static double freq_min = 40.0;              //minimum frequency displayed in the bar visualization
-static double freq_max = 8000.0;            //maximum frequency displayed in the bar visualization
-static double skip_duration = 2.5;          //Number of seconds per fastforward/rewind
-static bool playing = true;                 //Whether or not the audio (and accompanying visuals) is currently playing
-static uint64_t sample_rate = 44100;        //The sample rate
-static uint64_t frames_per_chunk = 2048;    //Number of audio frames read and processed per visual frame (chunk)
-static string gradient_style = "vertical";  //Orientation of the color gradient on the bars
-int actual_screen_width = 0;
-int actual_screen_height = 0;
-float* paused_data_buffer;
-int paused_buffer_size = 0;
-uint64_t prev_ticks = 0;
-float rising_speed = 12.0;
-float falling_speed = 8.0;
+
+struct AppState {
+    SDL_Window *window;
+    SDL_Renderer* renderer;
+    int actual_screen_width;
+    int actual_screen_height;
+    AudioStream* audio_stream;
+    SDL_AudioStream* sdl_audio_stream;
+    BarsDisplay* bd;
+    uint64_t sample_rate;
+    double freq_min;
+    double freq_max;
+    double global_max;
+    double global_min;
+    double max_queued_bytes;
+    uint64_t total_frames_sent;
+    uint64_t current_playhead;
+    uint64_t last_update_pos;
+    uint64_t prev_ticks;
+    bool playing;
+};
+
+
+
 
 fs::path fpath = "/Users/sjber/Coding/C++/SDL_Projects/MusicVisualizer/cliffsofdover.wav";
 // fs::path fpath = "/Users/sjber/Coding/C++/SDL_Projects/MusicVisualizer/footstepswav.wav";
-BarsDisplay bd;
-// AudioStream audio_stream(fpath, 2048);
-AudioStream* audio_stream;
-SDL_AudioStream* sdl_audio_stream;
 
 //Global variables for keeping track of the current playhead
 uint64_t total_frames_sent = 0; //total number of frames SENT to the audio device (not necessarily played yet)
@@ -353,54 +355,6 @@ vector<double> fft_chunk_to_power_chunk(vector<Frame> chunk) {
     return powers;
 }
 
-// vector<double> create_decibel_bins_from_frame_chunk(vector<Frame> chunk, uint64_t num_bins) {
-//     vector<complex<double>> complex_chunk = mono_chunk_to_complex(chunk_to_mono(chunk));
-//     vector<complex<double>> freq_data = fft(complex_chunk);
-//     uint64_t len = freq_data.size() / 2; //only use first half of fft output
-//     uint64_t vals_per_bin = len / num_bins;
-//
-//     for (int i=1; i<len; i+=vals_per_bin) {
-//         double sum = 0.0;
-//         for (int j=i; j<i+vals_per_bin; ++j) {
-//
-//         }
-//
-//     }
-//
-//
-// }
-
-
-// vector<double> fft_chunk_to_decibels_chunk(vector<Frame> chunk) {
-//     vector<complex<double>> complex_chunk = mono_chunk_to_complex(chunk_to_mono(chunk));
-//     vector<complex<double>> freq_data = fft(complex_chunk);
-//     vector<double> decibels(freq_data.size());
-//     for (int i=0; i<freq_data.size(); ++i) {
-//         decibels[i] = calculate_decibels(freq_data[i]);
-//     }
-//     return decibels;
-// }
-
-// vector<double> fft_chunk_to_decibel_bins(vector<Frame> chunk) {
-//
-// }
-//
-vector<double> fft_chunk_to_binned_power(vector<Frame> chunk, uint64_t num_bins=num_bars) {
-    // cout << "size of chunk (beginning): " << chunk.size();
-    vector<double> powers = fft_chunk_to_power_chunk(chunk);
-    // cout << "size of powers chunk (end): " << powers.size() << endl;
-    // cout << "audio_stream->chunk_size: " << audio_stream->chunk_size << endl;
-    return create_bins(powers, num_bins);
-}
-
-
-vector<double> fft_chunk_to_binned_decibels(vector<Frame> chunk, uint64_t num_bins=num_bars) {
-    // cout << "size of chunk (beginning): " << chunk.size();
-    vector<double> powers = fft_chunk_to_power_chunk(chunk);
-    // cout << "size of powers chunk (end): " << powers.size() << endl;
-    // cout << "audio_stream->chunk_size: " << audio_stream->chunk_size << endl;
-    return create_bins(powers, num_bins);
-}
 
 double max_chunk_power(vector<complex<double>> chunk) {
     double max_val = 0.0;
@@ -415,15 +369,15 @@ double max_chunk_power(vector<complex<double>> chunk) {
 
 
 
-Size get_screen_size() {
+Size get_screen_size(SDL_Renderer *renderer) {
     int w, h;
     SDL_GetRenderOutputSize(renderer, &w, &h);
     return Size{w, h};
 }
 
-bool put_audiostream_data(vector<Frame> chunk) {
+bool put_audiostream_data(vector<Frame>& chunk, SDL_AudioStream *sdl_audio_stream, int num_channels) {
     float* buff = chunk_to_float32_buff(chunk);
-    bool res = SDL_PutAudioStreamData(sdl_audio_stream, buff, chunk.size() * sizeof(float) * audio_stream->num_channels);
+    bool res = SDL_PutAudioStreamData(sdl_audio_stream, buff, chunk.size() * sizeof(float) * num_channels);
     delete[] buff;
     return res;
 }
@@ -441,6 +395,33 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     auto long_flags = args.long_flags;
     fs::path cwd = fs::current_path();
     fs::path argpath = args.plain_args.back();
+
+
+
+    static SDL_Window *window = NULL;
+    static SDL_Renderer *renderer = NULL;
+    static double global_max = -1000.0;         //min sample value found.  This default gets overridden at initialization, it for safety
+    static double global_min = 1000.0;          //max sample value found.  This default gets overridden at initialization, it for safety
+    static double freq_min = 40.0;              //minimum frequency displayed in the bar visualization
+    static double freq_max = 8000.0;            //maximum frequency displayed in the bar visualization
+    static double skip_duration = 2.5;          //Number of seconds per fastforward/rewind
+    static bool playing = true;                 //Whether or not the audio (and accompanying visuals) is currently playing
+    static uint64_t sample_rate = 48000;
+    static uint64_t frames_per_chunk = 2048;    //Number of audio frames read and processed per visual frame (chunk)
+    static string gradient_style = "vertical";  //Orientation of the color gradient on the bars
+    int actual_screen_width = 800;
+    int actual_screen_height = 600;
+    float* paused_data_buffer;
+    int paused_buffer_size = 0;
+    uint64_t prev_ticks = 0;
+    float rising_speed = 12.0;
+    float falling_speed = 8.0;
+
+
+    BarsDisplay *bd;
+    // AudioStream audio_stream(fpath, 2048);
+    AudioStream *audio_stream;
+    SDL_AudioStream *sdl_audio_stream;
 
 
     if (contains<string>(short_flag_names, "c")) {
@@ -524,8 +505,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     SDL_GetAudioDeviceFormat(dev, &dst_spec, NULL);
     SDL_AudioFormat audio_format = SDL_AUDIO_F32;
     int num_channels = audio_stream->num_channels;
-    int sample_rate = audio_stream->sample_rate;
-    SDL_AudioSpec audio_spec{audio_format, num_channels, sample_rate};
+    SDL_AudioSpec audio_spec{audio_format, num_channels, static_cast<int>(sample_rate)};
     sdl_audio_stream = SDL_CreateAudioStream(&audio_spec, &dst_spec);
     SDL_BindAudioStream(dev, sdl_audio_stream);
     // SDL_PutAudioStreamData(sdl_audio_stream,
@@ -597,15 +577,14 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         bars.push_back(Bar{float(normed_bins[i]), float(normed_bins[i]), c});
     }
     if (gradient_style == "horizontal") {
-        bd = BarsDisplay(screen_info, bars, rising_speed, falling_speed);
+        bd = new BarsDisplay(screen_info, bars, rising_speed, falling_speed);
     }
     else {
-        bd = BarsDisplay(screen_info, bars, GradientInfo{GREEN, RED, static_cast<uint64_t>(height)}, rising_speed, falling_speed);
+        bd = new BarsDisplay(screen_info, bars, GradientInfo{GREEN, RED, static_cast<uint64_t>(height), gradient_style}, rising_speed, falling_speed);
     }
     // bd = gradient_style == "horizontal" ? BarsDisplay(screen_info, bars) : BarsDisplay(screen_info, bars, GradientInfo{GREEN, RED, static_cast<uint64_t>(screen_info.screen_size.y)});
-    bd.lerp_t = lerp_t;
-    bd.update_heights(normed_bins);
-    
+    bd->lerp_t = lerp_t;
+    bd->update_heights(normed_bins);
     
 
     cout << "actual number of bins: " << bins.size() << endl;
@@ -613,14 +592,16 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     cout << "dst sample rate: " << dst_spec.freq << endl;
     cout << "dst format: " << dst_spec.format << endl;
 
-    // size_t width = img.get_width();
-    // size_t height = img.get_height();
-    // *appstate = new stateinfo{int(width), int(height), img};
     /* Create the window */
     if (!SDL_CreateWindowAndRenderer("Hello World", width, height, SDL_WINDOW_FULLSCREEN, &window, &renderer)) {
         SDL_Log("Couldn't create window and renderer: %s", SDL_GetError());
         return SDL_APP_FAILURE;
+
     }
+
+    *appstate = new AppState({window, renderer, actual_screen_width, actual_screen_height, audio_stream, sdl_audio_stream, bd,
+                              sample_rate, freq_min, freq_max, global_max, global_min, max_queued_bytes, total_frames_sent,
+                              current_playhead, last_update_pos, prev_ticks, playing});
     return SDL_APP_CONTINUE;
 }
 
@@ -628,14 +609,18 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
 {
     if (event->type == SDL_EVENT_KEY_DOWN) {
+        AppState *as = (AppState*)appstate;
+        AudioStream *audio_stream = as->audio_stream;
+        SDL_AudioStream *sdl_audio_stream = as->sdl_audio_stream;
+        cout << "sample_rate: " << as->sample_rate << endl;
         if (event->key.key == 'q') {
             cout << "bytes_per_frame: " << audio_stream->bytes_per_frame;
             SDL_UnbindAudioStream(sdl_audio_stream);
-            cout << "sample_rate: " << sample_rate << endl;
+            cout << "sample_rate: " << as->sample_rate << endl;
             return SDL_APP_SUCCESS;
         }
         else if (event->key.key == ' ') {
-            playing = !playing;
+            as->playing = !as->playing;
         }
         else if (event->key.scancode == SDL_SCANCODE_LEFT) {
             //User hit left arrow key, rewind stream 5 seconds
@@ -652,11 +637,13 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
         }
     }
     else if (event->type == SDL_EVENT_WINDOW_RESIZED) {
-        Size new_screen_size = get_screen_size();
-        bd.update_screen_size(new_screen_size);
+        AppState *as = (AppState*)appstate;
+        Size new_screen_size = get_screen_size(as->renderer);
+        as->bd->update_screen_size(new_screen_size);
     }
     else if (event->type == SDL_EVENT_QUIT) {
-        SDL_UnbindAudioStream(sdl_audio_stream);
+        AppState *as = (AppState*)appstate;
+        SDL_UnbindAudioStream(as->sdl_audio_stream);
         return SDL_APP_SUCCESS;  /* end the program, reporting success to the OS. */
     }
     return SDL_APP_CONTINUE;
@@ -665,6 +652,22 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
 /* This function runs once per frame, and is the heart of the program. */
 SDL_AppResult SDL_AppIterate(void *appstate)
 {
+
+    AppState* as = (AppState*)appstate;
+    AudioStream *audio_stream = as->audio_stream;
+    SDL_AudioStream *sdl_audio_stream = as->sdl_audio_stream;
+    BarsDisplay *bd = as->bd;
+    SDL_Renderer *renderer = as->renderer;
+    int actual_screen_width = as->actual_screen_width;
+    int actual_screen_height = as->actual_screen_height;
+    double global_max = as->global_max;
+    double global_min = as->global_min;
+    uint64_t sample_rate = as->sample_rate;
+    double freq_max = as->freq_max;
+    double freq_min = as->freq_min;
+    uint64_t prev_ticks = as->prev_ticks;
+
+
 
 
     const char *message = "Hello World!";
@@ -681,7 +684,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
 
 
-    if (playing) {
+    if (as->playing) {
         if (SDL_AudioStreamDevicePaused(sdl_audio_stream)) {
             SDL_ResumeAudioStreamDevice(sdl_audio_stream);
         }
@@ -690,7 +693,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         uint64_t ff_buffer_size = audio_stream->bytes_per_frame * audio_stream->sample_rate * 2.5;
         if (queued_bytes < max_queued_bytes) {
             vector<Frame> chunk = audio_stream->read_next_chunk();
-            put_audiostream_data(chunk);
+            put_audiostream_data(chunk, sdl_audio_stream, audio_stream->num_channels);
             total_frames_sent += chunk.size();
         }
         // float* buff = chunk_to_float32_buff(chunk);
@@ -699,7 +702,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         current_playhead = total_frames_sent - queued_frames;
         if ((current_playhead - last_update_pos) >= audio_stream->frames_per_chunk) {
             vector<Frame> curr_chunk = audio_stream->get_chunk_centered_at(current_playhead);
-            vector<double> bins = create_log_bins(curr_chunk, num_bars, sample_rate, freq_min, freq_max, 20.0);
+            vector<double> bins = create_log_bins(curr_chunk, bd->count, sample_rate, freq_min, freq_max, 20.0);
             Pair<double> minmax = vecminmax(bins);
             double min_val = minmax.first;
             double max_val = minmax.second;
@@ -717,7 +720,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
                 global_min *= decay_factor;
             }
             vector<double> normed_bins = convert_vec_to_range(bins, Range{global_min, global_max}, Range{0.0, 1.0});
-            bd.update_heights(normed_bins);
+            bd->update_heights(normed_bins);
             last_update_pos = current_playhead;
         }
         // else {
@@ -733,9 +736,10 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     uint64_t curr_ticks = SDL_GetTicks();
     uint64_t ticks_elapsed = curr_ticks - prev_ticks;
     float seconds_elapsed = static_cast<float>(ticks_elapsed) / 1000.0f;
+    as->prev_ticks = curr_ticks;
     prev_ticks = curr_ticks;
 
-    bd.process_visual_frame(seconds_elapsed);
+    bd->process_visual_frame(seconds_elapsed);
 
     //dev essentially represents the actual sound card device
     // SDL_CreateAudioStream(&audio_spec,
@@ -754,7 +758,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     SDL_SetRenderDrawColor(renderer, 0, 0, 255, 255);
     // SDL_RenderRect(renderer, &rect);
 
-    bd.render(renderer, gradient_style);
+    bd->render(renderer);
 
     SDL_RenderPresent(renderer);
 
@@ -768,6 +772,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 /* This function runs once at shutdown. */
 void SDL_AppQuit(void *appstate, SDL_AppResult result)
 {
-    cout << "normalization_multiplier: " << audio_stream->normalization_multiplier << endl;
+    AppState *as = (AppState*)appstate;
+    cout << "normalization_multiplier: " << as->audio_stream->normalization_multiplier << endl;
     cout << "max queued chunks: " << max_queued_chunks << endl;
 }

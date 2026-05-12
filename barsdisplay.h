@@ -60,6 +60,7 @@ class BarsDisplay {
     public:
         int32_t count;
         float lerp_t;
+        std::string gradient_style;
 
         BarsDisplay(ScreenInfo screen_info, std::vector<Bar> bars, float rise_speed=12.0, float fall_speed=8.0) 
             : screen_size(screen_info.screen_size), bars(bars), rising_speed(rise_speed), falling_speed(fall_speed) 
@@ -70,6 +71,7 @@ class BarsDisplay {
             count = bars.size();
             bar_width = screen_width / count;
             // gradient = std::vector<Color>({RED, GREEN, BLUE});
+            gradient_style = "vertical";
             gradient = create_gradient(GREEN, RED, screen_height);
             lerp_t = 0.4;
         }
@@ -81,6 +83,7 @@ class BarsDisplay {
             screen_height = screen_size.y;
             count = bars.size();
             bar_width = screen_width / count;
+            gradient_style = grad_info.style;
             gradient = create_gradient(grad_info);
             lerp_t = 0.4;
         }
@@ -176,7 +179,7 @@ class BarsDisplay {
 
 
         //gradient_style options are "vertical" for volume based gradient, and "horizontal" for a simple gradient across the bins
-        void render(SDL_Renderer *renderer, std::string gradient_style="vertical") {
+        void render(SDL_Renderer *renderer) {
             for (int i=0; i<bars.size(); ++i) {
                 Rect rect = getRect(i);
                 uint64_t color_height = static_cast<uint64_t>(bars[i].height * (gradient.size()-1));
