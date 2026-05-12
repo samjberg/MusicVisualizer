@@ -33,7 +33,8 @@ typedef SDL_FRect Rect;
 
 //This bar struct is meant very specifically for use with BarsDisplay.  It really has no use otherwise, as it is index based
 struct Bar {
-    float height = 0.0; //the height of the bar, normalized to the range [0.0, 1.0]
+    float height = 0.0; //the actual current height of the bar, normalized to the range [0.0, 1.0]
+    float target_height = 0.0; //the target height, height will approach target height over time, also normalized to [0.0, 1.0]
     Color color = Color{255, 0, 0, 0}; //I think you can figure this one out (red by default)
 };
 
@@ -60,7 +61,9 @@ class BarsDisplay {
         int32_t count;
         float lerp_t;
 
-        BarsDisplay(ScreenInfo screen_info, std::vector<Bar> bars) : screen_size(screen_info.screen_size), bars(bars) {
+        BarsDisplay(ScreenInfo screen_info, std::vector<Bar> bars, float rise_speed=12.0, float fall_speed=8.0) 
+            : screen_size(screen_info.screen_size), bars(bars), rising_speed(rise_speed), falling_speed(fall_speed) 
+        {
             render_scale = screen_info.render_scale;
             screen_width = screen_size.x;
             screen_height = screen_size.y;
@@ -70,7 +73,9 @@ class BarsDisplay {
             gradient = create_gradient(GREEN, RED, screen_height);
             lerp_t = 0.4;
         }
-        BarsDisplay(ScreenInfo screen_info, std::vector<Bar> bars, GradientInfo grad_info) : screen_size(screen_info.screen_size), bars(bars) {
+        BarsDisplay(ScreenInfo screen_info, std::vector<Bar> bars, GradientInfo grad_info, float rise_speed=12.0, float fall_speed=8.0) 
+            : screen_size(screen_info.screen_size), bars(bars), rising_speed(rise_speed), falling_speed(fall_speed) 
+        {
             render_scale = screen_info.render_scale;
             screen_width = screen_size.x;
             screen_height = screen_size.y;
@@ -79,7 +84,9 @@ class BarsDisplay {
             gradient = create_gradient(grad_info);
             lerp_t = 0.4;
         }
-        BarsDisplay(Size screen_size, std::vector<Bar> bars, float r_scale=4.0) : screen_size(screen_size), bars(bars) {
+        BarsDisplay(Size screen_size, std::vector<Bar> bars, float r_scale=4.0, float rise_speed=12.0, float fall_speed=8.0)
+            : screen_size(screen_size), bars(bars), rising_speed(rise_speed), falling_speed(fall_speed)
+        {
             render_scale = r_scale;
             screen_width  = screen_size.x;
             screen_height = screen_size.y;
@@ -88,11 +95,13 @@ class BarsDisplay {
             lerp_t = 0.4;
         }
 
-        BarsDisplay(Size screen_size, int32_t count, float r_scale=4.0) : screen_size(screen_size), count(count) {
+        BarsDisplay(Size screen_size, int32_t count, float r_scale=4.0, float rise_speed=12.0, float fall_speed=8.0)
+            : screen_size(screen_size), count(count), rising_speed(rise_speed), falling_speed(fall_speed)
+        {
             render_scale = r_scale;
             screen_width = screen_size.x;
             screen_height = screen_size.y;
-            bars = std::vector<Bar>(count, Bar{0.0, Color(0, 255, 0, 255)});
+            bars = std::vector<Bar>(count, Bar{0.0, 0.0, Color(0, 255, 0, 255)});
             gradient = create_gradient(GREEN, RED, screen_height);
             lerp_t = 0.4;
         }
@@ -100,7 +109,8 @@ class BarsDisplay {
         BarsDisplay() = default;
 
 
-        void update_heights(std::vector<double> heights) {
+        //NOTE: This function is outdated, but I am temporarily keeping it in the code just in case
+        void __update_heights(std::vector<double>& heights) {
             double t = lerp_t;//0.4; //time value for lerp
             for (int i=0; i<count; ++i) {
                 //I know this is hard to read.  It is just a ternary assignment statement where if the bar is rising (height[i]>bars[i].height)
@@ -109,6 +119,26 @@ class BarsDisplay {
                 bars[i].height = heights[i]>bars[i].height ? 
                     mylerp(bars[i].height, std::clamp(heights[i], 0.0, 1.0), fmin(fmax(0.75, 1.0-lerp_t), 0.85)) : 
                     mylerp(bars[i].height, std::clamp(heights[i], 0.0, 1.0), lerp_t);
+            }
+        }
+
+        void update_heights(std::vector<double>& target_heights) {
+            for (int i=0; i<count; ++i) {
+                bars[i].target_height = std::clamp(target_heights[i], 0.0, 1.0);
+            }
+        }
+
+        //Run this function every iteration of SDL_AppIterate, it handles smoothly interpolating bar heights towards their target height
+        void process_visual_frame(float elapsed_seconds) {
+            // std::cout << "Processing visual frame with elapsed_seconds: " << elapsed_seconds << std::endl;
+            // float speed = 8.0;
+            for (int i=0; i<count; ++i) {
+                // float new_height = bars[i].height == bars[i].target_height ?
+                float new_height = bars[i].target_height >= bars[i].height ? 
+                    mylerp(bars[i].height, bars[i].target_height, rising_speed * elapsed_seconds) :
+                    mylerp(bars[i].height, bars[i].target_height, falling_speed * elapsed_seconds);
+                bars[i].height = new_height;
+
             }
         }
 
@@ -163,15 +193,15 @@ class BarsDisplay {
 
 
     private:
-        Size screen_size; //The size of the screen, duh
-        float render_scale; //The factor by which the render is scaled up
+        Size screen_size;    //The size of the screen, duh
+        float render_scale;  //The factor by which the render is scaled up
+        float rising_speed;  //The speed factor that affects the temporal lerp of how fast bars rise
+        float falling_speed; //The speed factor that affects the temporal lerp of how fast bars fall
         int32_t screen_width, screen_height; //figure it out
         int32_t bar_width; //The width of each bar in window pixels
         std::vector<Bar> bars; //list of the actual bar objects (structs) that are displayed
         std::vector<float> prev_heights;
         Gradient gradient; //the gradient used across the bars (horizontally) to determine bar color
-        
-
 };
 
 

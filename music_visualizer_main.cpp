@@ -48,6 +48,9 @@ int actual_screen_width = 0;
 int actual_screen_height = 0;
 float* paused_data_buffer;
 int paused_buffer_size = 0;
+uint64_t prev_ticks = 0;
+float rising_speed = 12.0;
+float falling_speed = 8.0;
 
 fs::path fpath = "/Users/sjber/Coding/C++/SDL_Projects/MusicVisualizer/cliffsofdover.wav";
 // fs::path fpath = "/Users/sjber/Coding/C++/SDL_Projects/MusicVisualizer/footstepswav.wav";
@@ -484,6 +487,17 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         lerp_t = stof(short_flags["l"]);
     }
 
+    if (contains<string>(short_flag_names, "rs")) {
+        rising_speed = stof(short_flags["rs"]);
+    }
+    if (contains<string>(short_flag_names, "fs")) {
+        falling_speed = stof(short_flags["fs"]);
+    }
+
+    if (contains<string>(short_flag_names, "s")) {
+        rising_speed = stof(short_flags["s"]);
+        falling_speed = rising_speed / 2.0f;
+    }
 
 
 
@@ -580,13 +594,13 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         cout << "power: " << power << endl;
         cout << "db: " << decibels << endl;
         Color c = colors[i%3];
-        bars.push_back(Bar{float(normed_bins[i]), c});
+        bars.push_back(Bar{float(normed_bins[i]), float(normed_bins[i]), c});
     }
     if (gradient_style == "horizontal") {
-        bd = BarsDisplay(screen_info, bars);
+        bd = BarsDisplay(screen_info, bars, rising_speed, falling_speed);
     }
     else {
-        bd = BarsDisplay(screen_info, bars, GradientInfo{GREEN, RED, static_cast<uint64_t>(height)});
+        bd = BarsDisplay(screen_info, bars, GradientInfo{GREEN, RED, static_cast<uint64_t>(height)}, rising_speed, falling_speed);
     }
     // bd = gradient_style == "horizontal" ? BarsDisplay(screen_info, bars) : BarsDisplay(screen_info, bars, GradientInfo{GREEN, RED, static_cast<uint64_t>(screen_info.screen_size.y)});
     bd.lerp_t = lerp_t;
@@ -652,6 +666,7 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
 SDL_AppResult SDL_AppIterate(void *appstate)
 {
 
+
     const char *message = "Hello World!";
     // int w = img.get_width(), h = img.get_height();
     float x, y;
@@ -713,6 +728,14 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     else {
         SDL_PauseAudioStreamDevice(sdl_audio_stream);
     }
+
+
+    uint64_t curr_ticks = SDL_GetTicks();
+    uint64_t ticks_elapsed = curr_ticks - prev_ticks;
+    float seconds_elapsed = static_cast<float>(ticks_elapsed) / 1000.0f;
+    prev_ticks = curr_ticks;
+
+    bd.process_visual_frame(seconds_elapsed);
 
     //dev essentially represents the actual sound card device
     // SDL_CreateAudioStream(&audio_spec,
