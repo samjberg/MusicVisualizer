@@ -47,3 +47,15 @@ I was going to write that there is a problem where it only works on Windows and 
 
 * -l
     * Sets the time/interpolation parameter for the lerp (linear interpolation) used for bar heights moving between audio updates
+
+* -mqc
+    * Sets maximum number of queued chunks (in the SDL_AudioStream) before streaming more audio data.  Set this to a higher value if you are seeing/hearing stuttering.
+
+* -rs
+    * Sets the "rising speed" of bars.  This is the interpolation speed for bars while they are rising
+
+* -fs
+    * Sets the "falling speed" of bars.  This is the interpolation speed for bars while they are falling
+
+* -s
+    * Sets the "rising speed" of bars to the specified value, and sets "falling speed" to 1/2 of the specified value.
