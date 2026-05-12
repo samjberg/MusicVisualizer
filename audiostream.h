@@ -3,6 +3,7 @@
 
 #include <iostream>
 #include <vector>
+#include <span>
 #include <cstdint>
 #include <fstream>
 #include <filesystem>
@@ -267,23 +268,25 @@ class AudioStream {
         }
 
         //idx is a frame index.  Passing in idx=N means getting the chunk BEGINNING at the Nth frame;
-        vector<Frame> get_chunk_at(uint64_t idx) {
+        span<Frame> get_chunk_at(uint64_t idx) {
             uint64_t end_idx = min(idx + chunk_size, data_size/bytes_per_frame);
-            return get_stored_frames_at(idx, end_idx);
+            return span<Frame>(&stored_frames[idx], end_idx-idx);
+            // return get_stored_frames_at(idx, end_idx);
         }
 
 
         //idx is a frame index.  Passing in idx=N means get the chunk CENTERED at the Nth frame.
-        vector<Frame> get_chunk_centered_at(uint64_t idx) {
+        span<Frame> get_chunk_centered_at(uint64_t idx) {
             // uint64_t start_idx = max(idx - (frames_per_chunk / 2), static_cast<uint64_t>(0));
             uint64_t start_idx = (idx > (frames_per_chunk / 2)) ? (idx - (frames_per_chunk / 2)) : 0;
             uint64_t end_idx = min(start_idx + frames_per_chunk, static_cast<uint64_t>(stored_frames.size()));
-            // cout << "chunk centered at: " << idx << " starts at: " << start_idx << " and ends at: " << end_idx << endl;
-            vector<Frame> chunk(frames_per_chunk);
-            for (int i=start_idx; i<end_idx; ++i) {
-                chunk[i-start_idx] = stored_frames[i];
-            }
-            return chunk;
+            return span<Frame>(&stored_frames[start_idx], end_idx - start_idx);
+            // // cout << "chunk centered at: " << idx << " starts at: " << start_idx << " and ends at: " << end_idx << endl;
+            // vector<Frame> chunk(frames_per_chunk);
+            // for (int i=start_idx; i<end_idx; ++i) {
+            //     chunk[i-start_idx] = stored_frames[i];
+            // }
+            // return chunk;
         }
 
         uint64_t curr_pos() {

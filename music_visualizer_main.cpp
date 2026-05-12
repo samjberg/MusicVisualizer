@@ -23,6 +23,7 @@
 #include <complex>
 #include <SDL3/SDL_rect.h>
 #include <filesystem>
+#include <iterator>
 #define SDL_MAIN_USE_CALLBACKS 1  /* use the callbacks instead of main() */
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -240,22 +241,14 @@ vector<double> chunk_to_mono(vector<Frame> chunk) {
     return mono_vals;
 }
 
-vector<vector<double>> chunk_to_samples(vector<Frame> chunk) {
-    int num_channels = chunk[0].num_channels;
-    int num_samples = chunk.size();
-    //Create a vector of vector<double> of length num_channels.  One vector<double> for each channel
-    vector<vector<double>> samples_list(num_channels);
-    //Initialize each element of samples_list to be a vector<double> of length num_samples
-    for (int i=0; i<num_channels; ++i) {
-        samples_list[i] = vector<double>(num_samples);
-    }
-    //Assign the actual values
+
+
+vector<double> chunk_to_mono(span<Frame> chunk) {
+    vector<double> mono_vals(chunk.size());
     for (int i=0; i<chunk.size(); ++i) {
-        for (int c=0; c<num_channels; ++c) {
-            samples_list[c][i] = chunk[i].channels[c];
-        }
+        mono_vals[i] = frame_to_mono(chunk[i]);
     }
-    return samples_list;
+    return mono_vals;
 }
 
 
@@ -302,9 +295,35 @@ int freq_to_fft_index(double freq, int fft_size, int sample_rate) {
 }
 
 
-vector<double> create_log_bins(vector<Frame> chunk, uint64_t num_bins, double sample_rate,
-                               double min_freq=60.0, uint64_t max_freq=12000.0, double norm_factor_multiplier=10.0) {
+// vector<double> create_log_bins(vector<Frame> chunk, uint64_t num_bins, double sample_rate,
+//                                double min_freq=60.0, uint64_t max_freq=12000.0, double norm_factor_multiplier=10.0) {
+//     vector<complex<double>> complex_chunk = mono_chunk_to_complex(chunk_to_mono(chunk));
+//     vector<complex<double>> freq_data = fft(complex_chunk);
+//     uint64_t fft_size = freq_data.size();
+//     uint64_t len = fft_size/2;
+//     uint64_t vals_per_bin = len / num_bins;
+//     vector<double> edges = make_log_freq_edges(min_freq, max_freq, num_bins);
+//     vector<double> binned_vals;
+//     for (int i=0; i<num_bins; ++i) {
+//         int start_idx = freq_to_fft_index(edges[i], fft_size, sample_rate);
+//         int end_idx = freq_to_fft_index(edges[i+1], fft_size, sample_rate);
+//         if (end_idx <= start_idx) {
+//             end_idx = start_idx + 1;
+//         }
+//         double sum = 0.0;
+//         for (int j=start_idx; j<end_idx; ++j) {
+//             sum += calculate_power(freq_data[j]);
+//         }
+//         double avg_power = sum/(end_idx-start_idx);
+//         avg_power = max(avg_power, 1e-12);
+//         double normed_avg_power = norm_factor_multiplier * avg_power / (fft_size);
+//         binned_vals.push_back(calculate_db_from_power(normed_avg_power));
+//     }
+//     return binned_vals;
+// }
 
+vector<double> create_log_bins(span<Frame> chunk, uint64_t num_bins, double sample_rate,
+                               double min_freq=60.0, uint64_t max_freq=12000.0, double norm_factor_multiplier=10.0) {
     vector<complex<double>> complex_chunk = mono_chunk_to_complex(chunk_to_mono(chunk));
     vector<complex<double>> freq_data = fft(complex_chunk);
     uint64_t fft_size = freq_data.size();
@@ -327,7 +346,74 @@ vector<double> create_log_bins(vector<Frame> chunk, uint64_t num_bins, double sa
         double normed_avg_power = norm_factor_multiplier * avg_power / (fft_size);
         binned_vals.push_back(calculate_db_from_power(normed_avg_power));
     }
+    return binned_vals;
+}
 
+vector<double> create_log_bins(vector<double> samples, uint64_t num_bins, double sample_rate,
+                               double min_freq=60.0, uint64_t max_freq=12000.0, double norm_factor_multiplier=10.0) {
+
+    vector<complex<double>> complex_chunk = mono_chunk_to_complex(samples);
+    vector<complex<double>> freq_data = fft(complex_chunk);
+    uint64_t fft_size = freq_data.size();
+    uint64_t len = fft_size/2;
+    uint64_t vals_per_bin = len / num_bins;
+    vector<double> edges = make_log_freq_edges(min_freq, max_freq, num_bins);
+    vector<double> binned_vals;
+    for (int i=0; i<num_bins; ++i) {
+        int start_idx = freq_to_fft_index(edges[i], fft_size, sample_rate);
+        int end_idx = freq_to_fft_index(edges[i+1], fft_size, sample_rate);
+        if (end_idx <= start_idx) {
+            end_idx = start_idx + 1;
+        }
+        double sum = 0.0;
+        for (int j=start_idx; j<end_idx; ++j) {
+            sum += calculate_power(freq_data[j]);
+        }
+        double avg_power = sum/(end_idx-start_idx);
+        avg_power = max(avg_power, 1e-12);
+        double normed_avg_power = norm_factor_multiplier * avg_power / (fft_size);
+        binned_vals.push_back(calculate_db_from_power(normed_avg_power));
+    }
+    return binned_vals;
+}
+
+
+vector<double> create_log_bins_new(span<Frame> chunk, uint64_t num_bins, double sample_rate,
+                               double min_freq=60.0, uint64_t max_freq=12000.0, double norm_factor_multiplier=10.0) {
+
+    uint64_t num_channels = chunk[0].num_channels;
+    if (num_channels == 1) {
+        return create_log_bins(chunk, num_bins, sample_rate, min_freq, max_freq, norm_factor_multiplier);
+    }
+    vector<double> binned_vals(num_bins);
+    for (int c=0; c<num_channels; ++c) {
+        vector<double> samples(chunk.size());
+        for (int i=0; i<chunk.size(); ++i) {
+            samples[i] = chunk[i].channels[c];
+        }
+        uint64_t half_bins_size = num_bins / 2;
+        vector<double> channel_bins = create_log_bins(samples, half_bins_size, sample_rate, min_freq, max_freq, norm_factor_multiplier);
+        if (c%2 == 0) {
+            //Even channel index, push values onto binned_vals in reverse order
+            for (int i=channel_bins.size()-1; i>=0; --i) {
+                //i is in reverse order, so we first have to reverse it to get a number from 0 to half_bins_size
+                //Then we add the offset to take into account that we are doing each channel separately starting at a new 0-size range
+                int j = (half_bins_size - i - 1) + (c * half_bins_size);
+                binned_vals[j] = channel_bins[i];
+            }
+
+        }
+        else {
+            //Odd channel index, push values onto binned_vals in forward order
+            for (int i=0; i<half_bins_size; ++i) {
+                int j = i + (c * half_bins_size);
+                binned_vals[j] = channel_bins[i];
+            }
+
+        }
+
+
+    }
     return binned_vals;
 }
 
@@ -342,31 +428,6 @@ double max_chunk_val(vector<Frame> frames) {
     }
     return max_val;
 }
-
-//Takes a raw chunk of frames, runs an fft on it, and then converts the fft output to power.
-//returns a vector<double> which represent the power for each frequency
-vector<double> fft_chunk_to_power_chunk(vector<Frame> chunk) {
-    vector<complex<double>> complex_chunk = mono_chunk_to_complex(chunk_to_mono(chunk));
-    vector<complex<double>> freq_data = fft(complex_chunk);
-    vector<double> powers(freq_data.size());
-    for (int i=0; i<freq_data.size(); ++i) {
-        powers[i] = calculate_power(freq_data[i]);
-    }
-    return powers;
-}
-
-
-double max_chunk_power(vector<complex<double>> chunk) {
-    double max_val = 0.0;
-    for (complex<double> c : chunk) {
-        double power = calculate_decibels(c);
-        if (power > max_val) {
-            max_val = power;
-        }
-    }
-    return max_val;
-}
-
 
 
 Size get_screen_size(SDL_Renderer *renderer) {
@@ -523,7 +584,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     cout << "AFTER FIRST READ" << endl;
     // vector<double> chunk_power = fft_chunk_to_power_chunk(chunk);
     // vector<double> bins = fft_chunk_to_binned_decibels(chunk);
-    vector<double> bins = create_log_bins(chunk, num_bars, sample_rate, freq_min, freq_max, 20.0);
+    vector<double> bins = create_log_bins_new(chunk, num_bars, sample_rate, freq_min, freq_max, 20.0);
     // vector<double> bins = fft_chunk_to_binned_power(chunk, num_bars);
     Range minmax = vecminmax(bins);
     double min_val = minmax.first;
@@ -555,9 +616,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     vector<complex<double>> vals = channel_to_complex(chunk, 0);
     cout << "len(vals): " << vals.size() << endl;
     vector<complex<double>> freq_data = fft(vals);
-    double max_power = max_chunk_power(freq_data);
     cout << "max_val: " << max_val << endl;
-    cout << "max_power: " << max_power << endl;
     std::vector<Bar> bars;
     Gradient colors = {Color{255, 0, 0, 255}, Color{0, 255, 0, 255}, Color{0, 0, 255, 255}};
     vector<double> normed_bins = convert_vec_to_range(bins, Range{global_min, global_max}, Range{0.0, 1.0});
@@ -565,7 +624,6 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     for (int i=0; i<bins.size(); ++i) {
         // float h = i / 20.0;//static_cast<float>(vals.size());
         // float h = 17 * freq_data[i].real() / max_val;
-        // float power = calculate_power(freq_data[i]) / max_power;
         float decibels = calculate_decibels(freq_data[i]);
         float power = bins[i] / global_max;
         // float normed_height = 
@@ -690,7 +748,6 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         }
         uint64_t queued_bytes = static_cast<uint64_t>(SDL_GetAudioStreamQueued(sdl_audio_stream));
 
-        uint64_t ff_buffer_size = audio_stream->bytes_per_frame * audio_stream->sample_rate * 2.5;
         if (queued_bytes < max_queued_bytes) {
             vector<Frame> chunk = audio_stream->read_next_chunk();
             put_audiostream_data(chunk, sdl_audio_stream, audio_stream->num_channels);
@@ -701,8 +758,8 @@ SDL_AppResult SDL_AppIterate(void *appstate)
         uint64_t queued_frames = queued_bytes / (sizeof(float) * audio_stream->num_channels);
         current_playhead = total_frames_sent - queued_frames;
         if ((current_playhead - last_update_pos) >= audio_stream->frames_per_chunk) {
-            vector<Frame> curr_chunk = audio_stream->get_chunk_centered_at(current_playhead);
-            vector<double> bins = create_log_bins(curr_chunk, bd->count, sample_rate, freq_min, freq_max, 20.0);
+            span<Frame> curr_chunk = audio_stream->get_chunk_centered_at(current_playhead);
+            vector<double> bins = create_log_bins_new(curr_chunk, bd->count, sample_rate, freq_min, freq_max, 20.0);
             Pair<double> minmax = vecminmax(bins);
             double min_val = minmax.first;
             double max_val = minmax.second;
