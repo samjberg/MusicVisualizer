@@ -1,12 +1,10 @@
 #ifndef BARSDISPLAY_H
 #define BARSDISPLAY_H
 
-// #include "bar.h"
 #include <iostream>
 #include <algorithm>
 #include <cstdint>
 #include <vector>
-#include <fstream>
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
 #include "SDL3/SDL_render.h"
@@ -52,9 +50,6 @@ inline std::vector<Bar> create_bars(std::vector<float>& heights) {
     return bars;
 }
 
-inline float mylerp(float oldval, float target, float a) {
-    return oldval + (a * (target - oldval));
-}
 
 class BarsDisplay {
     public:
@@ -66,6 +61,7 @@ class BarsDisplay {
             : screen_size(screen_info.screen_size), bars(bars), rising_speed(rise_speed), falling_speed(fall_speed) 
         {
             render_scale = screen_info.render_scale;
+            inv_render_scale = 1.0 / render_scale;
             screen_width = screen_size.x;
             screen_height = screen_size.y;
             count = bars.size();
@@ -79,6 +75,7 @@ class BarsDisplay {
             : screen_size(screen_info.screen_size), bars(bars), rising_speed(rise_speed), falling_speed(fall_speed) 
         {
             render_scale = screen_info.render_scale;
+            inv_render_scale = 1.0 / render_scale;
             screen_width = screen_size.x;
             screen_height = screen_size.y;
             count = bars.size();
@@ -91,6 +88,7 @@ class BarsDisplay {
             : screen_size(screen_size), bars(bars), rising_speed(rise_speed), falling_speed(fall_speed)
         {
             render_scale = r_scale;
+            inv_render_scale = 1.0 / render_scale;
             screen_width  = screen_size.x;
             screen_height = screen_size.y;
             count = bars.size();
@@ -102,6 +100,7 @@ class BarsDisplay {
             : screen_size(screen_size), count(count), rising_speed(rise_speed), falling_speed(fall_speed)
         {
             render_scale = r_scale;
+            inv_render_scale = 1.0 / render_scale;
             screen_width = screen_size.x;
             screen_height = screen_size.y;
             bars = std::vector<Bar>(count, Bar{0.0, 0.0, Color(0, 255, 0, 255)});
@@ -111,20 +110,8 @@ class BarsDisplay {
 
         BarsDisplay() = default;
 
-
-        //NOTE: This function is outdated, but I am temporarily keeping it in the code just in case
-        void __update_heights(std::vector<double>& heights) {
-            double t = lerp_t;//0.4; //time value for lerp
-            for (int i=0; i<count; ++i) {
-                //I know this is hard to read.  It is just a ternary assignment statement where if the bar is rising (height[i]>bars[i].height)
-                //it uses a higher (faster) lerp value.  So the bar can jump up quickly.  If the bar is falling, then it uses the actual
-                //lerp_t member variable instead, which results in a much slower interpolation, so the bars fall slower than they rise
-                bars[i].height = heights[i]>bars[i].height ? 
-                    mylerp(bars[i].height, std::clamp(heights[i], 0.0, 1.0), fmin(fmax(0.75, 1.0-lerp_t), 0.85)) : 
-                    mylerp(bars[i].height, std::clamp(heights[i], 0.0, 1.0), lerp_t);
-            }
-        }
-
+        //Updates the heights of the bars.  This does NOT `set` the heights of the bars immediately.  Instead it sets the target_height,
+        //and the actual heights will be interpolated towards the target height over time as process_visual_frame is called
         void update_heights(std::vector<double>& target_heights) {
             for (int i=0; i<count; ++i) {
                 bars[i].target_height = std::clamp(target_heights[i], 0.0, 1.0);
@@ -138,18 +125,9 @@ class BarsDisplay {
             for (int i=0; i<count; ++i) {
                 // float new_height = bars[i].height == bars[i].target_height ?
                 float new_height = bars[i].target_height >= bars[i].height ? 
-                    mylerp(bars[i].height, bars[i].target_height, rising_speed * elapsed_seconds) :
-                    mylerp(bars[i].height, bars[i].target_height, falling_speed * elapsed_seconds);
+                    std::lerp(bars[i].height, bars[i].target_height, rising_speed * elapsed_seconds) :
+                    std::lerp(bars[i].height, bars[i].target_height, falling_speed * elapsed_seconds);
                 bars[i].height = new_height;
-
-            }
-        }
-
-        void decay_heights(double factor = 0.99) {
-            for (int i=0; i<count; ++i) {
-                float new_val = bars[i].height * factor;
-                // bars[i].height = std::lerp(bars[i].height, new_val, 0.05);
-                bars[i].height = std::lerp(bars[i].height, new_val, 0.05);
 
             }
         }
@@ -174,7 +152,7 @@ class BarsDisplay {
             float y = (1.0 - b.height) * screen_height;
             float w = bar_width;
             float h = b.height * screen_height;
-            return Rect{x/render_scale, y/render_scale, w/render_scale, h/render_scale};
+            return Rect{x*inv_render_scale, y*inv_render_scale, w*inv_render_scale, h*inv_render_scale};
         }
 
 
@@ -198,6 +176,7 @@ class BarsDisplay {
     private:
         Size screen_size;    //The size of the screen, duh
         float render_scale;  //The factor by which the render is scaled up
+        float inv_render_scale;
         float rising_speed;  //The speed factor that affects the temporal lerp of how fast bars rise
         float falling_speed; //The speed factor that affects the temporal lerp of how fast bars fall
         int32_t screen_width, screen_height; //figure it out
