@@ -7,58 +7,21 @@
 #include <cstdint>
 #include <fstream>
 #include <filesystem>
+#include "iaudiostream.h"
 #include "frame.h"
+#include <SDL3/SDL_audio.h>
 
 namespace fs = std::filesystem;
 using namespace std;
 
 
-struct WaveHeader {
-    string chunk_id; //Big
-    uint64_t chunk_size; //Little
-    string format; //Big
-};
-
-
-struct Chunk {
-    string chunk_id; //Big
-    uint64_t chunk_size; //Little
-    uint64_t format; //Little
-    uint64_t num_channels; //Little
-    uint64_t sample_rate; //Little
-    uint64_t byte_rate; //Little
-    uint64_t block_align; //Little
-    uint64_t bits_per_sample; //Little
-    uint64_t extra_param_size;
-    uint64_t extra_params; //I'm not sure if this is necessary, and also it may NEED to be removed
-};
-
-
-//Converts a chunk (a vector of Frames) to a float*, ready to be passed to SDL_PutAudioStreamData to be played as audio
-inline float* chunk_to_float32_buff(std::vector<Frame>& chunk) {
-    float* buff = new float[chunk.size() * chunk[0].num_channels];
-    int count = 0;
-    for (int i = 0; i < chunk.size(); ++i) {
-        for (int c=0; c<chunk[i].num_channels; ++c) {
-            buff[count] = chunk[i].channels[c];
-            count++;
-        }
-    }
-    return buff;
-}
-
-
-class AudioStream {
+//Class for creating a stream to read a .wav file.  Only works for output, not input, and only for .wav files currently
+//Does work with all bit depths, sample rates, number of channels, etc
+class AudioStream : public IAudioStream {
     public:
-        uint64_t data_size;
-        double normalization_multiplier;
-        uint64_t pos; //The current stream pos, always equal to file->tellg();
-        uint64_t num_channels, sample_rate, byte_rate, block_align, bits_per_sample;
-        uint64_t bytes_per_sample, bits_per_frame, bytes_per_frame, frames_per_chunk;
-        uint64_t chunk_size; //This is the size of a streaming chunk.  NOT an actual wav chunk, like header, fmt, list, data.
-                             //It represents the size in bytes to be read for each "frame"/update of the visualizer display.
-                             //It is these chunks that will get fed into the fft
-        AudioStream(fs::path path, uint64_t frames_per_chunk) : frames_per_chunk(frames_per_chunk) {
+        AudioStream(fs::path path, uint64_t frames_per_chunk) : IAudioStream(42) {
+            this->frames_per_chunk = frames_per_chunk;
+            stream_type = file_stream;
             file = new ifstream(path, ios_base::binary);
             WaveHeader header = read_header();
             Chunk fmt = read_fmt_chunk();
@@ -77,9 +40,12 @@ class AudioStream {
             normalization_multiplier = 1 / static_cast<double>(normalization_divisor);
             uint64_t total_frames = data_size / bytes_per_frame;
             stored_frames.reserve(total_frames);
+            total_frames_consumed = 0; //total number of frames SENT to the audio device (not necessarily played yet)
+            last_update_pos = 0;
+            current_playhead = 0;
         }
 
-        AudioStream() {}
+        AudioStream() : IAudioStream(69) {}
 
 
         ~AudioStream() {
@@ -90,7 +56,7 @@ class AudioStream {
 
 
         //Reads the next n bytes into a char* buffer from the underlying ifstream.  This function uses the ifstream's position
-        char* next_n_bytes(uint64_t n, int64_t start=-1) {
+        inline char* next_n_bytes(uint64_t n, int64_t start=-1) {
             if (start == -1) {
                 //we never read more than 16 bytes
                 char *buff = new char[n+1];
@@ -105,6 +71,62 @@ class AudioStream {
             buff[n] = '\0';
             return buff;
         }
+
+
+        inline Chunk read_fmt_chunk() {
+            std::string chunk_id_var = _next_n_bytes(file, 4);
+            uint64_t chunk_size_var = _next_n_bytes_sizet<uint64_t>(file, 4, true);
+            uint64_t format_var = _next_n_bytes_sizet<uint64_t>(file, 2);
+            uint64_t num_channels_var = _next_n_bytes_sizet<uint64_t>(file, 2);
+            uint64_t sample_rate_var = _next_n_bytes_sizet<uint64_t>(file, 4);
+            uint64_t byte_rate_var = _next_n_bytes_sizet<uint64_t>(file, 4);
+            uint64_t block_align_var = _next_n_bytes_sizet<uint64_t>(file, 2);
+            uint64_t bits_per_sample_var = _next_n_bytes_sizet<uint64_t>(file, 2);
+            return Chunk{chunk_id_var, chunk_size_var, format_var, num_channels_var, sample_rate_var, byte_rate_var, block_align_var, bits_per_sample_var};
+        }
+
+
+
+        inline WaveHeader read_header() {
+                //Read the initial "RIFF" bytes
+                std::string chunk_id = _next_n_bytes(file, 4);
+                // cout << "chunk_id: " << chunk_id << endl;
+                uint64_t header_chunk_size = _next_n_bytes_sizet<uint64_t>(file, 4);
+                // cout << "header_chunk_size: " << header_chunk_size << endl;
+                std::string format = _next_n_bytes(file, 4);
+                // cout << "format: " << format << endl;
+                // cout << "at end of read_header, file->tell(): " << file->tellg() << endl;
+                return WaveHeader{chunk_id, header_chunk_size, format};
+        }
+
+
+
+        inline uint64_t ff_to_data() {
+            // cout << "Stream pos at beginning of ff_to_data: " << file->tellg() << endl;
+            std::string word = "data";
+            char c[2];
+            c[1] = '\0';
+            int16_t i = 0;
+            while (c[0] != 'd') {
+                // cout << i << endl;
+                file->read(c, 1);
+                i++;
+                if (i > 1000) {
+                    break;
+                }
+            }
+            std::string s = _next_n_bytes(file, 3);
+            if (s == "ata") {
+                uint32_t datasize;
+                file->read(reinterpret_cast<char*>(&datasize), 4);
+                return datasize;
+            }
+            return 0;
+        }
+
+
+
+
 
 
         template<typename numT>
@@ -137,54 +159,10 @@ class AudioStream {
         }
 
 
-        WaveHeader read_header() {
-            //Read the initial "RIFF" bytes
-            string chunk_id = next_n_bytes(4);
-            // cout << "chunk_id: " << chunk_id << endl;
-            uint64_t header_chunk_size = next_n_bytes_sizet<uint64_t>(4);
-            // cout << "header_chunk_size: " << header_chunk_size << endl;
-            string format = next_n_bytes(4);
-            // cout << "format: " << format << endl;
-            // cout << "at end of read_header, file->tell(): " << file->tellg() << endl;
-            return WaveHeader{chunk_id, header_chunk_size, format};
-        }
-
-        Chunk read_fmt_chunk() {
-            string chunk_id_var = next_n_bytes(4);
-            uint64_t chunk_size_var = next_n_bytes_sizet<uint64_t>(4, true);
-            uint64_t format_var = next_n_bytes_sizet<uint64_t>(2);
-            uint64_t num_channels_var = next_n_bytes_sizet<uint64_t>(2);
-            uint64_t sample_rate_var = next_n_bytes_sizet<uint64_t>(4);
-            uint64_t byte_rate_var = next_n_bytes_sizet<uint64_t>(4);
-            uint64_t block_align_var = next_n_bytes_sizet<uint64_t>(2);
-            uint64_t bits_per_sample_var = next_n_bytes_sizet<uint64_t>(2);
-            return Chunk{chunk_id_var, chunk_size_var, format_var, num_channels_var, sample_rate_var, byte_rate_var, block_align_var, bits_per_sample_var};
-        }
+        
 
 
-        uint64_t ff_to_data() {
-            cout << "Stream pos at beginning of ff_to_data: " << file->tellg() << endl;
-            string word = "data";
-            char c[2];
-            c[1] = '\0';
-            int16_t i = 0;
-            while (c[0] != 'd') {
-                // cout << i << endl;
-                file->read(c, 1);
-                i++;
-                if (i > 1000) {
-                    cout << "FAILED TO FIND d" << endl;
-                    break;
-                }
-            }
-            string s = next_n_bytes(3);
-            if (s == "ata") {
-                uint32_t datasize;
-                file->read(reinterpret_cast<char*>(&datasize), 4);
-                return datasize;
-            }
-            return 0;
-        }
+
 
         Frame next_frame() {
             uint64_t curr_frame_idx = pos / bytes_per_frame;
@@ -203,6 +181,10 @@ class AudioStream {
                 pos += bytes_per_frame;
                 return stored_frames[curr_frame_idx];
             }
+        }
+
+        uint64_t total_frames_available() override {
+            return stored_frames.size() - (pos * bytes_per_frame);
         }
 
         vector<Frame> next_n_frames(uint64_t n) {
@@ -249,7 +231,7 @@ class AudioStream {
         }
 
 
-        vector<Frame> read_next_chunk() {
+        vector<Frame> read_next_chunk() override {
             return next_n_frames(frames_per_chunk);
         }
 
@@ -287,6 +269,15 @@ class AudioStream {
             //     chunk[i-start_idx] = stored_frames[i];
             // }
             // return chunk;
+        }
+
+        vector<Frame> next_display_chunk() override {
+            vector<Frame> vec_chunk;
+            span<Frame> span_chunk = get_chunk_centered_at(current_playhead);
+            vec_chunk.assign(span_chunk.begin(), span_chunk.end());
+            return vec_chunk;
+            // return get_chunk_centered_at(current_playhead);
+
         }
 
         uint64_t curr_pos() {
@@ -336,30 +327,10 @@ class AudioStream {
 
         //Fast forward the stream by `seconds` seconds
         uint64_t ff_seconds(double seconds) {
-
-            cout << "[ff_seconds] enter seconds=" << seconds
-                 << " good=" << file->good()
-                 << " eof=" << file->eof()
-                 << " fail=" << file->fail()
-                 << " bad=" << file->bad()
-                 << endl;
-            cout << "[ff_seconds] tellg before seek=" << pos
-                 << " good=" << file->good()
-                 << " eof=" << file->eof()
-                 << " fail=" << file->fail()
-                 << " bad=" << file->bad()
-                 << endl;
             int64_t num_bytes = seconds * sample_rate * bytes_per_frame;
             cout << "[ff_seconds] byte offset=" << num_bytes << endl;
             seek_forward(num_bytes);
             auto after = file->tellg();
-            cout << "[ff_seconds] tellg after seek=" << after
-                 << " good=" << file->good()
-                 << " eof=" << file->eof()
-                 << " fail=" << file->fail()
-                 << " bad=" << file->bad()
-                 << endl;
-
             pos = min(pos + static_cast<uint64_t>(num_bytes), static_cast<uint64_t>(data_size));
             return pos;
         }
@@ -369,28 +340,10 @@ class AudioStream {
             cout << "stored_frames.size(): " << stored_frames.size();
 
             // auto pos = file->tellg();
-            cout << "[rewind_seconds] tellg before seek=" << pos
-                 << " good=" << file->good()
-                 << " eof=" << file->eof()
-                 << " fail=" << file->fail()
-                 << " bad=" << file->bad()
-                 << endl;
             int64_t num_bytes = static_cast<int64_t>(seconds * byte_rate);
-            cout << "[rewind_seconds] byte offset=" << -num_bytes << endl;
             seek(-num_bytes);
             auto after = file->tellg();
-            cout << "[rewind_seconds] tellg after seek=" << after
-                 << " good=" << file->good()
-                 << " eof=" << file->eof()
-                 << " fail=" << file->fail()
-                 << " bad=" << file->bad()
-                 << endl;
             pos = max(pos - static_cast<uint64_t>(num_bytes), static_cast<uint64_t>(0));
-            for (int i=0; i<20; ++i) {
-                cout << "pos: " << pos << endl;
-                cout << "audio_stream->pos: " << this->pos << endl;
-                cout << "pos frame (pos/bytes_per_frame): " << pos / bytes_per_frame << endl;
-            }
             return pos;
         }
 
@@ -398,17 +351,45 @@ class AudioStream {
             return stored_frames.size();
         }
 
-        void close() {
+        bool next_chunk_ready() {
+            return true;
+        }
+
+        bool update_playhead_should_play(uint64_t queued_bytes) override {
+            uint64_t queued_frames = queued_bytes / (sizeof(float) * num_channels);
+            current_playhead = total_frames_consumed - queued_frames;
+            bool should_play = ((current_playhead - last_update_pos) >= frames_per_chunk);
+            if (should_play) {
+                last_update_pos = current_playhead;
+                return true;
+            }
+            return false;
+        }
+
+        bool put_audiostream_data(vector<Frame>& chunk) {
+            float* buff = chunk_to_float32_buff(chunk);
+            bool res = SDL_PutAudioStreamData(sdl_audio_stream, buff, chunk.size() * sizeof(float) * num_channels);
+            delete[] buff;
+            total_frames_consumed += chunk.size();
+            return res;
+        }
+
+        void set_sdl_audio_stream(SDL_AudioStream* sdl_as) {
+            sdl_audio_stream = sdl_as;
+        }
+
+
+
+
+        void close() override {
             file->close();
         }
 
 
 
     private:
-        ifstream *file;
-        vector<Frame> stored_frames;
-
-
+        SDL_AudioStream *sdl_audio_stream; //pointer to the SDL_AudioStream, used for putting audio data to the sound card
+        uint64_t last_update_pos = 0;
 
         //Reads n bytes from buff and correctly converts them from a raw sample to a normalized double in the range -1 to 1
         double n_bytes_to_normalized_double(const char* buff, int16_t n, bool little_endian=true) {

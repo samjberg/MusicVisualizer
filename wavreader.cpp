@@ -202,7 +202,7 @@ vector<complex<double>> channel_to_complex(vector<Frame>& frames, int channel) {
 
 
 int32_t main(int32_t argc, char** argv) {
-    AudioStream stream(test_fname, 4096);
+    AudioLoopbackStream stream(test_fname, 4096);
     for (int j=0; j<20; ++j) {
         vector<Frame> frames = stream.read_next_chunk();
         for (int idx = 0; idx<frames.size(); ++idx) {
