@@ -469,7 +469,34 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     auto short_flags = args.short_flags;
     auto long_flags = args.long_flags;
     fs::path cwd = fs::current_path();
-    fs::path argpath = args.plain_args.back();
+    fs::path argpath;
+    if (args.plain_args.size() > 0) {
+        argpath = args.plain_args.back();
+    }
+    else {
+        argpath = "loopback";
+    }
+    //Reassign argpath if it has a value because of my bad command line argument handling.  Right now ParsedArgs will always
+    //read the last flag value as both that flag's value, but also as a plain_arg.  So this is just dealing with both that
+    //scenario, as well as the scenario where there are no plain args.
+    if (argpath.string().size() == 0) {
+        cout << "argpath empty, setting it to \"loopback\"" << endl;
+        argpath = "loopback";
+    }
+    else {
+        for (auto pair : short_flags) {
+            if (argpath == pair.second) {
+                argpath = "loopback";
+                break;
+            }
+        }
+        for (auto pair : long_flags) {
+            if (argpath == pair.second) {
+                argpath = "loopback";
+                break;
+            }
+        }
+    }
 
 
 
@@ -608,17 +635,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     float render_scale = 4.0;
     Size screen_size{width, height};
     ScreenInfo screen_info{screen_size, render_scale};
-    // cout << "BEFORE FIRST READ" << endl;
-    // vector<Frame> chunk = audio_stream->read_next_chunk();
-    // cout << "AFTER FIRST READ" << endl;
-    // vector<double> chunk_power = fft_chunk_to_power_chunk(chunk);
-    // vector<double> bins = fft_chunk_to_binned_decibels(chunk);
     vector<double> bins(num_bars, 0.0);
-    // vector<double> bins = create_log_bins_new(chunk, num_bars, sample_rate, freq_min, freq_max, 20.0);
-    // vector<double> bins = fft_chunk_to_binned_power(chunk, num_bars);
     Range minmax = vecminmax(bins);
-    // double min_val = minmax.first;
-    // double max_val = minmax.second;
     double min_val = -60.0;
     double max_val = 10.0;
     if (max_val > global_max) {
@@ -634,38 +652,15 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     else {
         global_min *= 0.99f;
     }
-    // for (int i=0; i<20; ++i) {
-    //     chunk = audio_stream->read_next_chunk();
-    //     bins = fft_chunk_to_binned_power(chunk);
-    //     max_val = vecmax(bins);
-    //     if (max_val > global_max) {
-    //         global_max = max_val;
-    //     }
-    //     else {
-    //         global_max *= 0.99f;
-    //     }
-    // }
-    // vector<complex<double>> vals = channel_to_complex(chunk, 0);
-    // cout << "len(vals): " << vals.size() << endl;
-    // vector<complex<double>> freq_data = fft(vals);
     cout << "max_val: " << max_val << endl;
     std::vector<Bar> bars;
     Gradient colors = {Color{255, 0, 0, 255}, Color{0, 255, 0, 255}, Color{0, 0, 255, 255}};
     vector<double> normed_bins = convert_vec_to_range(bins, Range{global_min, global_max}, Range{0.0, 1.0});
     // for (int i=0; i<100; i++) {//vals.size(); i++) {
     for (int i=0; i<bins.size(); ++i) {
-        // float h = i / 20.0;//static_cast<float>(vals.size());
-        // float h = 17 * freq_data[i].real() / max_val;
-        // float decibels = calculate_decibels(freq_data[i]);
         float power = bins[i] / global_max;
-        // float normed_height = 
-
-        // cout << "freq_data[" <<  i << "]:" << freq_data[i] << endl;
-        cout << "power: " << power << endl;
-        // cout << "db: " << decibels << endl;
         Color c = colors[i%3];
-        // bars.push_back(Bar{float(normed_bins[i]), float(normed_bins[i]), c});
-        bars.push_back(Bar{0.0, 0.0, Color{0, 255, 0}});
+        bars.push_back(Bar{0.0, 0.0, Color{0, 255, 0, 255}});
     }
     if (gradient_style == "horizontal") {
         bd = new BarsDisplay(screen_info, bars, rising_speed, falling_speed);
