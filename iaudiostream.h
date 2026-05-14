@@ -86,6 +86,7 @@ protected:
 
 public:
     audiostream_type stream_type;
+    uint64_t current_playhead;
     uint64_t data_size;
     double normalization_multiplier;
     uint64_t pos; //The current stream pos, always equal to file->tellg();
@@ -97,10 +98,13 @@ public:
     IAudioStream(std::filesystem::path path, uint64_t frames_per_chunk);
     IAudioStream(int it_literally_doesnt_matter_pass_in_anything_this_is_to_deal_with_cpps_bullshit) {};
     virtual ~IAudioStream() = default;
-    virtual std::vector<Frame> next_n_frames(uint64_t n) = 0;
+    // virtual std::vector<Frame> next_n_frames(uint64_t n) = 0;
     virtual std::vector<Frame> read_next_chunk() = 0;
-    virtual std::span<Frame> get_chunk_centered_at(uint64_t idx) = 0;
     virtual uint64_t total_frames_available() = 0;
+    virtual std::vector<Frame> next_display_chunk() = 0; //Returns the next chunk to be displayed visually with a BarsDisplay
+    //Performs all functions related to updating the playhead, whatever that means for the IAudioStream's stream_type, and returns
+    //whether or not the stream is ready to display more visual data (has a new full chunk available)
+    virtual bool update_playhead_should_play(uint64_t queued_bytes=0) = 0; 
     virtual void close() = 0;
 };
 

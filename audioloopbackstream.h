@@ -124,7 +124,7 @@ class AudioLoopbackStream : public IAudioStream {
 
 
 
-        vector<Frame> read_next_chunk() {
+        vector<Frame> read_next_chunk() override {
             return next_n_frames(frames_per_chunk);
         }
 
@@ -162,6 +162,10 @@ class AudioLoopbackStream : public IAudioStream {
             //     chunk[i-start_idx] = stored_frames[i];
             // }
             // return chunk;
+        }
+
+        vector<Frame> next_display_chunk() override {
+            return read_next_chunk();
         }
 
         uint64_t curr_pos() {
@@ -271,6 +275,10 @@ class AudioLoopbackStream : public IAudioStream {
 
         uint64_t num_stored_frames() {
             return stored_frames.size();
+        }
+
+        bool next_chunk_ready() {
+            return true;
         }
 
         void close() {
@@ -482,6 +490,11 @@ class AudioLoopbackStream : public IAudioStream {
                 total_frames_consumed += frames_remaining;
             }
             return frames;
+        }
+
+        //The argument is not used.  It is there just for compatibility so that this can be an inherited function from IAudioStream
+        bool update_playhead_should_play(uint64_t queued_bytes=0) override {
+            return total_frames_available() >= frames_per_chunk;
         }
 
         static void data_callback(struct ma_device *device, void *output_buff, const void *input_buff, ma_uint32 frame_count) {

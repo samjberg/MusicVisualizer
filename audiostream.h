@@ -9,6 +9,7 @@
 #include <filesystem>
 #include "iaudiostream.h"
 #include "frame.h"
+#include <SDL3/SDL_audio.h>
 
 namespace fs = std::filesystem;
 using namespace std;
@@ -39,6 +40,9 @@ class AudioStream : public IAudioStream {
             normalization_multiplier = 1 / static_cast<double>(normalization_divisor);
             uint64_t total_frames = data_size / bytes_per_frame;
             stored_frames.reserve(total_frames);
+            total_frames_consumed = 0; //total number of frames SENT to the audio device (not necessarily played yet)
+            last_update_pos = 0;
+            current_playhead = 0;
         }
 
         AudioStream() : IAudioStream(69) {}
@@ -179,7 +183,7 @@ class AudioStream : public IAudioStream {
             }
         }
 
-        uint64_t total_frames_available() {
+        uint64_t total_frames_available() override {
             return stored_frames.size() - (pos * bytes_per_frame);
         }
 
@@ -227,7 +231,7 @@ class AudioStream : public IAudioStream {
         }
 
 
-        vector<Frame> read_next_chunk() {
+        vector<Frame> read_next_chunk() override {
             return next_n_frames(frames_per_chunk);
         }
 
@@ -265,6 +269,15 @@ class AudioStream : public IAudioStream {
             //     chunk[i-start_idx] = stored_frames[i];
             // }
             // return chunk;
+        }
+
+        vector<Frame> next_display_chunk() override {
+            vector<Frame> vec_chunk;
+            span<Frame> span_chunk = get_chunk_centered_at(current_playhead);
+            vec_chunk.assign(span_chunk.begin(), span_chunk.end());
+            return vec_chunk;
+            // return get_chunk_centered_at(current_playhead);
+
         }
 
         uint64_t curr_pos() {
@@ -338,17 +351,45 @@ class AudioStream : public IAudioStream {
             return stored_frames.size();
         }
 
-        void close() {
+        bool next_chunk_ready() {
+            return true;
+        }
+
+        bool update_playhead_should_play(uint64_t queued_bytes) override {
+            uint64_t queued_frames = queued_bytes / (sizeof(float) * num_channels);
+            current_playhead = total_frames_consumed - queued_frames;
+            bool should_play = ((current_playhead - last_update_pos) >= frames_per_chunk);
+            if (should_play) {
+                last_update_pos = current_playhead;
+                return true;
+            }
+            return false;
+        }
+
+        bool put_audiostream_data(vector<Frame>& chunk) {
+            float* buff = chunk_to_float32_buff(chunk);
+            bool res = SDL_PutAudioStreamData(sdl_audio_stream, buff, chunk.size() * sizeof(float) * num_channels);
+            delete[] buff;
+            total_frames_consumed += chunk.size();
+            return res;
+        }
+
+        void set_sdl_audio_stream(SDL_AudioStream* sdl_as) {
+            sdl_audio_stream = sdl_as;
+        }
+
+
+
+
+        void close() override {
             file->close();
         }
 
 
 
     private:
-        // ifstream *file;
-        // vector<Frame> stored_frames;
-
-
+        SDL_AudioStream *sdl_audio_stream; //pointer to the SDL_AudioStream, used for putting audio data to the sound card
+        uint64_t last_update_pos = 0;
 
         //Reads n bytes from buff and correctly converts them from a raw sample to a normalized double in the range -1 to 1
         double n_bytes_to_normalized_double(const char* buff, int16_t n, bool little_endian=true) {

@@ -397,47 +397,6 @@ vector<double> create_log_bins_new(span<Frame> chunk, uint64_t num_bins, double 
 
 
 
-// vector<double> create_log_bins_new(vector<Frame>& chunk, uint64_t num_bins, double sample_rate,
-//                                double min_freq=60.0, uint64_t max_freq=12000.0, double norm_factor_multiplier=10.0) {
-//
-//     uint64_t num_channels = chunk[0].num_channels;
-//     if (num_channels == 1) {
-//         return create_log_bins(chunk, num_bins, sample_rate, min_freq, max_freq, norm_factor_multiplier);
-//     }
-//     vector<double> binned_vals(num_bins);
-//     for (int c=0; c<num_channels; ++c) {
-//         vector<double> samples(chunk.size());
-//         for (int i=0; i<chunk.size(); ++i) {
-//             samples[i] = chunk[i].channels[c];
-//         }
-//         uint64_t half_bins_size = num_bins / 2;
-//         vector<double> channel_bins = create_log_bins(samples, half_bins_size, sample_rate, min_freq, max_freq, norm_factor_multiplier);
-//         if (c%2 == 0) {
-//             //Even channel index, push values onto binned_vals in reverse order
-//             for (int i=channel_bins.size()-1; i>=0; --i) {
-//                 //i is in reverse order, so we first have to reverse it to get a number from 0 to half_bins_size
-//                 //Then we add the offset to take into account that we are doing each channel separately starting at a new 0-size range
-//                 int j = (half_bins_size - i - 1) + (c * half_bins_size);
-//                 binned_vals[j] = channel_bins[i];
-//             }
-//
-//         }
-//         else {
-//             //Odd channel index, push values onto binned_vals in forward order
-//             for (int i=0; i<half_bins_size; ++i) {
-//                 int j = i + (c * half_bins_size);
-//                 binned_vals[j] = channel_bins[i];
-//             }
-//
-//         }
-//
-//
-//     }
-//     return binned_vals;
-// }
-
-
-
 double max_chunk_val(vector<Frame> frames) {
     double max_val = 0;
     for (Frame frame : frames) {
@@ -500,45 +459,6 @@ inline void testfunc() {
 /* This function runs once at startup. */
 SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 {
-
-    // ma_backend backends[] = { ma_backend_wasapi };
-    // ma_context context;
-    // if (ma_context_init(backends, 1, NULL, &context) != MA_SUCCESS) {
-    //     // Error.
-    // }
-    // ma_device_info* pPlaybackInfos;
-    // ma_uint32 playbackCount;
-    // ma_device_info* pCaptureInfos;
-    // ma_uint32 captureCount;
-    // if (ma_context_get_devices(&context, &pPlaybackInfos, &playbackCount, &pCaptureInfos, &captureCount) != MA_SUCCESS) {
-    //     // Error.
-    // }
-    //
-    // for (int i=0; i<captureCount; ++i) {
-    //     std::cout << "Capture Device " << i << ": " << pCaptureInfos[i].name << std::endl;
-    // }
-    //
-    // for (int i=0; i<playbackCount; ++i) {
-    //     std::cout << "Playback Device " << i << ": " << pPlaybackInfos[i].name << std::endl;
-    // }
-    //
-    // ma_device_config config = ma_device_config_init(ma_device_type_loopback);
-    // config.capture.pDeviceID = &pPlaybackInfos[0].id;
-    // config.capture.format = ma_format_f32;
-    // config.capture.channels = 0;
-    // config.sampleRate = 0;
-    // config.dataCallback = data_callback;
-    //
-    //
-    // ma_device device;
-    // ma_device_init(&context, &config, &device);
-    //
-    // ma_device_start(&device);
-    //
-
-
-
-
 
     SDL_Init(SDL_INIT_AUDIO);
     // fs::path imgpath = "/Users/sjber/Coding/C++/SDL_Projects/PPM_Viewer/img2.ppm";
@@ -655,6 +575,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     }
     else {
         audio_stream = make_unique<AudioStream>(cwd/argpath, frames_per_chunk);
+        // a->sdl
     }
     sample_rate = audio_stream->sample_rate;
     max_queued_bytes = max_queued_chunks * audio_stream->bytes_per_frame * audio_stream->frames_per_chunk;
@@ -762,6 +683,12 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     cout << "dst sample rate: " << dst_spec.freq << endl;
     cout << "dst format: " << dst_spec.format << endl;
 
+
+    if (audio_stream->stream_type == file_stream) {
+        AudioStream *audio_stream_specific = dynamic_cast<AudioStream*>(audio_stream.get());
+        audio_stream_specific->set_sdl_audio_stream(sdl_audio_stream);
+    }
+
     /* Create the window */
     if (!SDL_CreateWindowAndRenderer("Hello World", width, height, SDL_WINDOW_FULLSCREEN, &window, &renderer)) {
         SDL_Log("Couldn't create window and renderer: %s", SDL_GetError());
@@ -799,7 +726,9 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
         cout << "sample_rate: " << as->sample_rate << endl;
         if (event->key.key == 'q') {
             cout << "bytes_per_frame: " << as->audio_stream->bytes_per_frame;
-            SDL_UnbindAudioStream(sdl_audio_stream);
+            if (as->audio_stream->stream_type == file_stream) {
+                SDL_UnbindAudioStream(sdl_audio_stream);
+            }
             cout << "sample_rate: " << as->sample_rate << endl;
             return SDL_APP_SUCCESS;
         }
@@ -833,7 +762,9 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
     }
     else if (event->type == SDL_EVENT_QUIT) {
         AppState *as = (AppState*)appstate;
-        SDL_UnbindAudioStream(as->sdl_audio_stream);
+        if (as->audio_stream->stream_type == file_stream) {
+            SDL_UnbindAudioStream(as->sdl_audio_stream);
+        }
         return SDL_APP_SUCCESS;  /* end the program, reporting success to the OS. */
     }
     return SDL_APP_CONTINUE;
@@ -873,70 +804,34 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     float decay_factor = 0.99f;
 
 
+    uint64_t queued_bytes = 0;
 
-    if (as->audio_stream->stream_type == file_stream) {
-        if (as->playing) {
+
+    if (as->playing) {
+        if (as->audio_stream->stream_type == file_stream) {
             if (SDL_AudioStreamDevicePaused(sdl_audio_stream)) {
                 SDL_ResumeAudioStreamDevice(sdl_audio_stream);
             }
-            uint64_t queued_bytes = 0;
+            // uint64_t queued_bytes = 0;
             queued_bytes = static_cast<uint64_t>(SDL_GetAudioStreamQueued(sdl_audio_stream));
 
-            if ((as->audio_stream->stream_type != loopback_stream) && (queued_bytes < max_queued_bytes)) {
+            if (queued_bytes < max_queued_bytes) {
+                AudioStream* audio_stream = dynamic_cast<AudioStream*>(as->audio_stream.get());
                 vector<Frame> chunk = as->audio_stream->read_next_chunk();
-                put_audiostream_data(chunk, sdl_audio_stream, as->audio_stream->num_channels);
-                total_frames_sent += chunk.size();
+                audio_stream->put_audiostream_data(chunk);
+                // put_audiostream_data(chunk, sdl_audio_stream, as->audio_stream->num_channels);
+                // as->audio_stream->total_frames_consumed += chunk.size();
             }
             // float* buff = chunk_to_float32_buff(chunk);
             // SDL_PutAudioStreamData(sdl_as->audio_stream, buff, audio_stream->frames_per_chunk * sizeof(float) * audio_stream->num_channels);
-            uint64_t queued_frames = queued_bytes / (sizeof(float) * as->audio_stream->num_channels);
-            current_playhead = total_frames_sent - queued_frames;
-            if ((current_playhead - last_update_pos) >= as->audio_stream->frames_per_chunk) {
-                // as->audio_stream->
-                vector<double> bins;
-                if (as->audio_stream->stream_type == file_stream) {
-                    span<Frame> curr_chunk = as->audio_stream->get_chunk_centered_at(current_playhead);
-                    cout << "CURR_CHUNK.SIZE(): " << curr_chunk.size() << endl;
-                    bins = create_log_bins_new(curr_chunk, bd->count, sample_rate, freq_min, freq_max, 20.0);
-                }
-                else {
-                    vector<Frame> curr_chunk = as->audio_stream->read_next_chunk();
-                    bins = create_log_bins_new(curr_chunk, bd->count, sample_rate, freq_min, freq_max, 20.0);
-                }
-                Pair<double> minmax = vecminmax(bins);
-                double min_val = minmax.first;
-                double max_val = minmax.second;
-                // cout << "minmax min: " << min_val << " minmax max: " << max_val << endl;
-                if (max_val > global_max) {
-                    global_max = max_val;
-                }
-                else {
-                    global_max *= decay_factor;
-                }
-                if (min_val < global_min) {
-                    global_min = min_val;
-                }
-                else {
-                    global_min *= decay_factor;
-                }
-                vector<double> normed_bins = convert_vec_to_range(bins, Range{global_min, global_max}, Range{0.0, 1.0});
-                bd->update_heights(normed_bins);
-                last_update_pos = current_playhead;
-            }
-            // else {
-            //     bd.decay_heights(0.99f);
-            // }
-            // delete[] buff;
+            // uint64_t queued_frames = queued_bytes / (sizeof(float) * as->audio_stream->num_channels);
+            // current_playhead = total_frames_sent - queued_frames;
+            // if ((current_playhead - last_update_pos) >= as->audio_stream->frames_per_chunk) {
+            // if (as->audio_stream->upd
+            // AudioStream *audio_stream = dynamic_cast<AudioStream*>(as->audio_stream.get());
         }
-        else {
-            SDL_PauseAudioStreamDevice(sdl_audio_stream);
-        }
-    }
-    //stream_type == loopback_stream
-    else {
-        uint64_t frames_available = as->audio_stream->total_frames_available();
-        if (frames_available >= as->audio_stream->frames_per_chunk) {
-            vector<Frame> curr_chunk = as->audio_stream->read_next_chunk();
+        if (as->audio_stream->update_playhead_should_play(queued_bytes)) {
+            vector<Frame> curr_chunk = as->audio_stream->next_display_chunk();
             vector<double> bins = create_log_bins_new(curr_chunk, bd->count, sample_rate, freq_min, freq_max, 20.0);
             Pair<double> minmax = vecminmax(bins);
             double min_val = minmax.first;
@@ -954,16 +849,17 @@ SDL_AppResult SDL_AppIterate(void *appstate)
             else {
                 global_min *= decay_factor;
             }
+            as->global_max = global_max;
+            as->global_min = global_min;
             vector<double> normed_bins = convert_vec_to_range(bins, Range{global_min, global_max}, Range{0.0, 1.0});
             bd->update_heights(normed_bins);
-            last_update_pos = current_playhead;
-
+            // last_update_pos = current_playhead;
         }
+    }
+    else if (as->audio_stream->stream_type == file_stream) {
         // else {
-        //     as->audio_stream->read_next_chunk();
-        //
+        SDL_PauseAudioStreamDevice(sdl_audio_stream);
         // }
-
 
     }
 
