@@ -6,6 +6,7 @@
 // #include "barsdisplay.h"
 #include "colorutils.h"
 #include "parseargs.h"
+#include "miniaudio/miniaudio.h"
 
 
 // inline std::string reverse_str(std::string str) {
@@ -66,8 +67,96 @@ inline int32_t get_bitreversed_index(int32_t idx) {
     return from_bin<int32_t>(rev_binstr);
 }
 
+void data_callback(struct ma_device *device, void *output_buff, const void *input_buff, unsigned int frame_count) {
+    int idx= 5;
+    const short *buff = (const short*)input_buff;
+    int num_channels = 2;
+    for (int i=0; i<frame_count; i++) {
+        for (int j = i * num_channels; j<(i*num_channels)+num_channels; ++j) {
+            short sample = buff[j];
+            cout << sample << " ";
+        }
+        cout << endl;
+    }
+}
+
+inline void testfunc() {
+    ma_backend backends[] = { ma_backend_wasapi };
+    ma_context context;
+    if (ma_context_init(backends, 1, NULL, &context) != MA_SUCCESS) {
+        // Error.
+    }
+    ma_device_info* pPlaybackInfos;
+    ma_uint32 playbackCount;
+    ma_device_info* pCaptureInfos;
+    ma_uint32 captureCount;
+    if (ma_context_get_devices(&context, &pPlaybackInfos, &playbackCount, &pCaptureInfos, &captureCount) != MA_SUCCESS) {
+        // Error.
+    }
+
+    for (int i=0; i<captureCount; ++i) {
+        std::cout << "Capture Device " << i << ": " << pCaptureInfos[i].name << std::endl;
+    }
+
+    for (int i=0; i<playbackCount; ++i) {
+        std::cout << "Playback Device " << i << ": " << pPlaybackInfos[i].name << std::endl;
+    }
+
+    ma_device_config config = ma_device_config_init(ma_device_type_loopback);
+    config.capture.pDeviceID = &pPlaybackInfos[0].id;
+    config.capture.format = ma_format_f32;
+    config.capture.channels = 0;
+    config.sampleRate = 0;
+    config.dataCallback = data_callback;
+
+
+
+}
 
 int main(int argc, char** argv) {
+    ma_backend backends[] = { ma_backend_wasapi };
+    ma_context context;
+    if (ma_context_init(NULL, 0, NULL, &context) != MA_SUCCESS) {
+        // Error.
+    }
+    ma_device_info* pPlaybackInfos;
+    ma_uint32 playbackCount;
+    ma_device_info* pCaptureInfos;
+    ma_uint32 captureCount;
+    if (ma_context_get_devices(&context, &pPlaybackInfos, &playbackCount, &pCaptureInfos, &captureCount) != MA_SUCCESS) {
+        cout << "THERE WAS AN ERROR" << endl;
+        // Error.
+    }
+
+    for (int i=0; i<captureCount; ++i) {
+        std::cout << "Capture Device " << i << ": " << pCaptureInfos[i].name << std::endl;
+    }
+
+    for (int i=0; i<playbackCount; ++i) {
+        std::cout << "Playback Device " << i << ": " << pPlaybackInfos[i].name << std::endl;
+    }
+
+    ma_device_config config = ma_device_config_init(ma_device_type_loopback);
+    config.capture.pDeviceID = &pPlaybackInfos[1].id;
+    config.capture.format = ma_format_s16;
+    config.capture.channels = 0;
+    config.sampleRate = 0;
+    config.dataCallback = data_callback;
+
+    ma_device device;
+    ma_device_init(&context, &config, &device);
+
+    ma_device_start(&device);
+
+
+    getchar();
+
+    // testfunc();
+    while(true) {
+        std::cout << "";
+
+    }
+    return 0;
 
     ParsedArgs args(argc, argv);
     vector<string> short_flag_names = args.short_flag_names;
