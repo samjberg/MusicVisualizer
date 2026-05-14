@@ -19,27 +19,26 @@ using namespace std;
 class AudioStream : public IAudioStream {
     public:
         AudioStream(fs::path path, uint64_t frames_per_chunk) : IAudioStream(42) {
-            filestream_setup(path, frames_per_chunk);
-            // this->frames_per_chunk = frames_per_chunk;
-            // stream_type = file_stream;
-            // file = new ifstream(path, ios_base::binary);
-            // WaveHeader header = read_header();
-            // Chunk fmt = read_fmt_chunk();
-            // num_channels = fmt.num_channels;
-            // sample_rate = fmt.sample_rate;
-            // byte_rate = fmt.byte_rate;
-            // block_align = fmt.block_align;
-            // bits_per_sample = fmt.bits_per_sample;
-            // bytes_per_sample = bits_per_sample / 8;
-            // bits_per_frame = bits_per_sample * num_channels;
-            // bytes_per_frame = bits_per_frame / 8;
-            // chunk_size = frames_per_chunk * bytes_per_frame;
-            // data_size = ff_to_data();
-            // pos = static_cast<uint64_t>(file->tellg());
-            // uint64_t normalization_divisor = 2 << (bits_per_sample - 2);
-            // normalization_multiplier = 1 / static_cast<double>(normalization_divisor);
-            // uint64_t total_frames = data_size / bytes_per_frame;
-            // stored_frames.reserve(total_frames);
+            this->frames_per_chunk = frames_per_chunk;
+            stream_type = file_stream;
+            file = new ifstream(path, ios_base::binary);
+            WaveHeader header = read_header();
+            Chunk fmt = read_fmt_chunk();
+            num_channels = fmt.num_channels;
+            sample_rate = fmt.sample_rate;
+            byte_rate = fmt.byte_rate;
+            block_align = fmt.block_align;
+            bits_per_sample = fmt.bits_per_sample;
+            bytes_per_sample = bits_per_sample / 8;
+            bits_per_frame = bits_per_sample * num_channels;
+            bytes_per_frame = bits_per_frame / 8;
+            chunk_size = frames_per_chunk * bytes_per_frame;
+            data_size = ff_to_data();
+            pos = static_cast<uint64_t>(file->tellg());
+            uint64_t normalization_divisor = 2 << (bits_per_sample - 2);
+            normalization_multiplier = 1 / static_cast<double>(normalization_divisor);
+            uint64_t total_frames = data_size / bytes_per_frame;
+            stored_frames.reserve(total_frames);
         }
 
         AudioStream() : IAudioStream(69) {}
@@ -53,7 +52,7 @@ class AudioStream : public IAudioStream {
 
 
         //Reads the next n bytes into a char* buffer from the underlying ifstream.  This function uses the ifstream's position
-        char* next_n_bytes(uint64_t n, int64_t start=-1) {
+        inline char* next_n_bytes(uint64_t n, int64_t start=-1) {
             if (start == -1) {
                 //we never read more than 16 bytes
                 char *buff = new char[n+1];
@@ -68,6 +67,62 @@ class AudioStream : public IAudioStream {
             buff[n] = '\0';
             return buff;
         }
+
+
+        inline Chunk read_fmt_chunk() {
+            std::string chunk_id_var = _next_n_bytes(file, 4);
+            uint64_t chunk_size_var = _next_n_bytes_sizet<uint64_t>(file, 4, true);
+            uint64_t format_var = _next_n_bytes_sizet<uint64_t>(file, 2);
+            uint64_t num_channels_var = _next_n_bytes_sizet<uint64_t>(file, 2);
+            uint64_t sample_rate_var = _next_n_bytes_sizet<uint64_t>(file, 4);
+            uint64_t byte_rate_var = _next_n_bytes_sizet<uint64_t>(file, 4);
+            uint64_t block_align_var = _next_n_bytes_sizet<uint64_t>(file, 2);
+            uint64_t bits_per_sample_var = _next_n_bytes_sizet<uint64_t>(file, 2);
+            return Chunk{chunk_id_var, chunk_size_var, format_var, num_channels_var, sample_rate_var, byte_rate_var, block_align_var, bits_per_sample_var};
+        }
+
+
+
+        inline WaveHeader read_header() {
+                //Read the initial "RIFF" bytes
+                std::string chunk_id = _next_n_bytes(file, 4);
+                // cout << "chunk_id: " << chunk_id << endl;
+                uint64_t header_chunk_size = _next_n_bytes_sizet<uint64_t>(file, 4);
+                // cout << "header_chunk_size: " << header_chunk_size << endl;
+                std::string format = _next_n_bytes(file, 4);
+                // cout << "format: " << format << endl;
+                // cout << "at end of read_header, file->tell(): " << file->tellg() << endl;
+                return WaveHeader{chunk_id, header_chunk_size, format};
+        }
+
+
+
+        inline uint64_t ff_to_data() {
+            // cout << "Stream pos at beginning of ff_to_data: " << file->tellg() << endl;
+            std::string word = "data";
+            char c[2];
+            c[1] = '\0';
+            int16_t i = 0;
+            while (c[0] != 'd') {
+                // cout << i << endl;
+                file->read(c, 1);
+                i++;
+                if (i > 1000) {
+                    break;
+                }
+            }
+            std::string s = _next_n_bytes(file, 3);
+            if (s == "ata") {
+                uint32_t datasize;
+                file->read(reinterpret_cast<char*>(&datasize), 4);
+                return datasize;
+            }
+            return 0;
+        }
+
+
+
+
 
 
         template<typename numT>
@@ -259,30 +314,10 @@ class AudioStream : public IAudioStream {
 
         //Fast forward the stream by `seconds` seconds
         uint64_t ff_seconds(double seconds) {
-
-            cout << "[ff_seconds] enter seconds=" << seconds
-                 << " good=" << file->good()
-                 << " eof=" << file->eof()
-                 << " fail=" << file->fail()
-                 << " bad=" << file->bad()
-                 << endl;
-            cout << "[ff_seconds] tellg before seek=" << pos
-                 << " good=" << file->good()
-                 << " eof=" << file->eof()
-                 << " fail=" << file->fail()
-                 << " bad=" << file->bad()
-                 << endl;
             int64_t num_bytes = seconds * sample_rate * bytes_per_frame;
             cout << "[ff_seconds] byte offset=" << num_bytes << endl;
             seek_forward(num_bytes);
             auto after = file->tellg();
-            cout << "[ff_seconds] tellg after seek=" << after
-                 << " good=" << file->good()
-                 << " eof=" << file->eof()
-                 << " fail=" << file->fail()
-                 << " bad=" << file->bad()
-                 << endl;
-
             pos = min(pos + static_cast<uint64_t>(num_bytes), static_cast<uint64_t>(data_size));
             return pos;
         }
@@ -292,28 +327,10 @@ class AudioStream : public IAudioStream {
             cout << "stored_frames.size(): " << stored_frames.size();
 
             // auto pos = file->tellg();
-            cout << "[rewind_seconds] tellg before seek=" << pos
-                 << " good=" << file->good()
-                 << " eof=" << file->eof()
-                 << " fail=" << file->fail()
-                 << " bad=" << file->bad()
-                 << endl;
             int64_t num_bytes = static_cast<int64_t>(seconds * byte_rate);
-            cout << "[rewind_seconds] byte offset=" << -num_bytes << endl;
             seek(-num_bytes);
             auto after = file->tellg();
-            cout << "[rewind_seconds] tellg after seek=" << after
-                 << " good=" << file->good()
-                 << " eof=" << file->eof()
-                 << " fail=" << file->fail()
-                 << " bad=" << file->bad()
-                 << endl;
             pos = max(pos - static_cast<uint64_t>(num_bytes), static_cast<uint64_t>(0));
-            for (int i=0; i<20; ++i) {
-                cout << "pos: " << pos << endl;
-                cout << "audio_stream->pos: " << this->pos << endl;
-                cout << "pos frame (pos/bytes_per_frame): " << pos / bytes_per_frame << endl;
-            }
             return pos;
         }
 

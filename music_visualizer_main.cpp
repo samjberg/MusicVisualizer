@@ -24,6 +24,7 @@
 #include <complex>
 #include <filesystem>
 #include <memory>
+#include <span>
 #define SDL_MAIN_USE_CALLBACKS 1  /* use the callbacks instead of main() */
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_main.h>
@@ -396,44 +397,44 @@ vector<double> create_log_bins_new(span<Frame> chunk, uint64_t num_bins, double 
 
 
 
-vector<double> create_log_bins_new(vector<Frame>& chunk, uint64_t num_bins, double sample_rate,
-                               double min_freq=60.0, uint64_t max_freq=12000.0, double norm_factor_multiplier=10.0) {
-
-    uint64_t num_channels = chunk[0].num_channels;
-    if (num_channels == 1) {
-        return create_log_bins(chunk, num_bins, sample_rate, min_freq, max_freq, norm_factor_multiplier);
-    }
-    vector<double> binned_vals(num_bins);
-    for (int c=0; c<num_channels; ++c) {
-        vector<double> samples(chunk.size());
-        for (int i=0; i<chunk.size(); ++i) {
-            samples[i] = chunk[i].channels[c];
-        }
-        uint64_t half_bins_size = num_bins / 2;
-        vector<double> channel_bins = create_log_bins(samples, half_bins_size, sample_rate, min_freq, max_freq, norm_factor_multiplier);
-        if (c%2 == 0) {
-            //Even channel index, push values onto binned_vals in reverse order
-            for (int i=channel_bins.size()-1; i>=0; --i) {
-                //i is in reverse order, so we first have to reverse it to get a number from 0 to half_bins_size
-                //Then we add the offset to take into account that we are doing each channel separately starting at a new 0-size range
-                int j = (half_bins_size - i - 1) + (c * half_bins_size);
-                binned_vals[j] = channel_bins[i];
-            }
-
-        }
-        else {
-            //Odd channel index, push values onto binned_vals in forward order
-            for (int i=0; i<half_bins_size; ++i) {
-                int j = i + (c * half_bins_size);
-                binned_vals[j] = channel_bins[i];
-            }
-
-        }
-
-
-    }
-    return binned_vals;
-}
+// vector<double> create_log_bins_new(vector<Frame>& chunk, uint64_t num_bins, double sample_rate,
+//                                double min_freq=60.0, uint64_t max_freq=12000.0, double norm_factor_multiplier=10.0) {
+//
+//     uint64_t num_channels = chunk[0].num_channels;
+//     if (num_channels == 1) {
+//         return create_log_bins(chunk, num_bins, sample_rate, min_freq, max_freq, norm_factor_multiplier);
+//     }
+//     vector<double> binned_vals(num_bins);
+//     for (int c=0; c<num_channels; ++c) {
+//         vector<double> samples(chunk.size());
+//         for (int i=0; i<chunk.size(); ++i) {
+//             samples[i] = chunk[i].channels[c];
+//         }
+//         uint64_t half_bins_size = num_bins / 2;
+//         vector<double> channel_bins = create_log_bins(samples, half_bins_size, sample_rate, min_freq, max_freq, norm_factor_multiplier);
+//         if (c%2 == 0) {
+//             //Even channel index, push values onto binned_vals in reverse order
+//             for (int i=channel_bins.size()-1; i>=0; --i) {
+//                 //i is in reverse order, so we first have to reverse it to get a number from 0 to half_bins_size
+//                 //Then we add the offset to take into account that we are doing each channel separately starting at a new 0-size range
+//                 int j = (half_bins_size - i - 1) + (c * half_bins_size);
+//                 binned_vals[j] = channel_bins[i];
+//             }
+//
+//         }
+//         else {
+//             //Odd channel index, push values onto binned_vals in forward order
+//             for (int i=0; i<half_bins_size; ++i) {
+//                 int j = i + (c * half_bins_size);
+//                 binned_vals[j] = channel_bins[i];
+//             }
+//
+//         }
+//
+//
+//     }
+//     return binned_vals;
+// }
 
 
 
@@ -807,15 +808,21 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
         }
         else if (event->key.scancode == SDL_SCANCODE_LEFT) {
             //User hit left arrow key, rewind stream 5 seconds
-            SDL_ClearAudioStream(sdl_audio_stream);
-            // as->audio_stream->rewind_seconds(2.5);
+            if (as->audio_stream->stream_type == file_stream) {
+                SDL_ClearAudioStream(sdl_audio_stream);
+                AudioStream *audio_stream = dynamic_cast<AudioStream*>(as->audio_stream.get());
+                audio_stream->rewind_seconds(2.5);
+            }
 
 
         }
         else if (event->key.scancode == SDL_SCANCODE_RIGHT) {
             //User hit left arrow key, rewind stream 5 seconds
-            SDL_ClearAudioStream(sdl_audio_stream);
-            // as->audio_stream->ff_seconds(2.5);
+            if (as->audio_stream->stream_type == file_stream) {
+                SDL_ClearAudioStream(sdl_audio_stream);
+                AudioStream *audio_stream = dynamic_cast<AudioStream*>(as->audio_stream.get());
+                audio_stream->ff_seconds(2.5);
+            }
 
         }
     }

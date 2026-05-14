@@ -314,7 +314,7 @@ class AudioLoopbackStream : public IAudioStream {
 
         uint64_t total_frames_available() {
             uint64_t frames_available = total_frames_read - total_frames_consumed;
-            cout << "frames_available: " << frames_available << endl;
+            // cout << "frames_available: " << frames_available << endl;
             return frames_available;
             // return total_frames_read - total_frames_consumed;
         }
@@ -404,14 +404,14 @@ class AudioLoopbackStream : public IAudioStream {
         vector<Frame> next_n_frames(uint64_t num_frames) {
             void *read_buffer;
             ma_uint32 frames_to_read = num_frames;
-            cout << "FRAMES_TO_READ BEFORE: " << frames_to_read << endl;
+            // cout << "FRAMES_TO_READ BEFORE: " << frames_to_read << endl;
             ma_pcm_rb_acquire_read(&ring_buffer, &frames_to_read, &read_buffer);
             // for (int i=0; i<10; i++) {
             //     cout << "num_channels: " << num_channels << endl;
             //     cout << "data_size: " << data_size << endl;
             //     cout << "stored_frames.size(): " << stored_frames.size() << endl;
             // }
-            cout << "FRAMES_TO_READ AFTER: " << frames_to_read << endl;
+            // cout << "FRAMES_TO_READ AFTER: " << frames_to_read << endl;
 
             float* f32_read_buffer = (float*)read_buffer;
 
