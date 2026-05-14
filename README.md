@@ -20,8 +20,8 @@ I was going to write that there is a problem where it only works on Windows and 
 
 * #### Then to run it:
 
-    * ./build/music\_visualizer.exe (on windows)
-    * ./build/music\_visualizer (on basically any other OS)
+    * ./build/music\_visualizer.exe \[OPTIONS\] \[FILEPATH | 'loopback'\] (on windows)
+    * ./build/music\_visualizer \[OPTIONS\] \[FILEPATH\] (on basically any other OS, loopback mode not yet supported)
 
 
 ## Currently supported command line flags
@@ -59,3 +59,9 @@ I was going to write that there is a problem where it only works on Windows and 
 
 * -s
     * Sets the "rising speed" of bars to the specified value, and sets "falling speed" to 1/2 of the specified value.
+
+
+## 3rd-Party Libraries
+* miniaudio - https://github.com/mackron/miniaudio
+    * Used for capturing device audio in loopback mode
+    * Check it out, it's a good library
