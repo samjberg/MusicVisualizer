@@ -6,4 +6,4 @@
 If:
   PathMatch: .*\.h
 CompileFlags:
-  Add: [-xc++-header, -std=c++20]
+  Add: [-xc++-header, -std=c++20, -isystem, C:/Users/sjber/Coding/Repos/vcpkg/installed/x64-windows/include]

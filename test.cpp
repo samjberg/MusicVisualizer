@@ -7,6 +7,7 @@
 #include "colorutils.h"
 #include "parseargs.h"
 #include "miniaudio/miniaudio.h"
+#include <rtaudio/rtaudio.h>
 
 
 // inline std::string reverse_str(std::string str) {
@@ -113,7 +114,62 @@ inline void testfunc() {
 
 }
 
+
+typedef unsigned int uint;
+
+
+static int data_callback_rt(void *output_buff, void *input_buff, unsigned int frame_count,
+                            double stream_time, unsigned int status, void *user_data) {
+    return 0;
+}
+
+void init_loopback_rt() {
+            RtAudio audio;
+            vector<uint32_t> ids = audio.getDeviceIds();
+            unsigned int device_id = audio.getDefaultOutputDevice();
+            RtAudio::DeviceInfo info = audio.getDeviceInfo(device_id);
+
+            unordered_map<uint, string> errmap;
+            errmap[RTAUDIO_NO_ERROR] = "RTAUDIO_NO_ERROR";
+            errmap[RTAUDIO_WARNING] = "RTAUDIO_WARNING";
+            errmap[RTAUDIO_UNKNOWN_ERROR] = "RTAUDIO_UNKNOWN_ERROR";
+            errmap[RTAUDIO_NO_DEVICES_FOUND] = "RTAUDIO_NO_DEVICES_FOUND";
+            errmap[RTAUDIO_INVALID_DEVICE] = "RTAUDIO_INVALID_DEVICE";
+            errmap[RTAUDIO_DEVICE_DISCONNECT] = "RTAUDIO_DEVICE_DISCONNECT";
+            errmap[RTAUDIO_MEMORY_ERROR] = "RTAUDIO_MEMORY_ERROR";
+            errmap[RTAUDIO_INVALID_PARAMETER] = "RTAUDIO_INVALID_PARAMETER";
+            errmap[RTAUDIO_INVALID_USE] = "RTAUDIO_INVALID_USE";
+            errmap[RTAUDIO_DRIVER_ERROR] = "RTAUDIO_DRIVER_ERROR";
+            errmap[RTAUDIO_SYSTEM_ERROR] = "RTAUDIO_SYSTEM_ERROR";
+            errmap[RTAUDIO_THREAD_ERROR] = "RTAUDIO_THREAD_ERROR";
+            uint sample_rate = info.currentSampleRate;
+            uint num_channels = info.outputChannels;
+            uint bytes_per_frame = 4 * num_channels;
+            RtAudio::StreamParameters parameters;
+            parameters.deviceId = device_id;
+            parameters.nChannels = num_channels;
+
+
+            unsigned int buffer_frames = 256;
+            // RtAudioErrorType e;
+
+            RtAudioErrorType e = audio.openStream(&parameters, NULL, RTAUDIO_FLOAT32, static_cast<unsigned int>(sample_rate), &buffer_frames, data_callback_rt);
+
+            if (e != RTAUDIO_NO_ERROR) {
+                cout << "ERROR: " << e << endl;
+
+            }
+            audio.closeStream();
+
+            cout << "Using audio output source: " << info.name << endl;
+
+
+        }
+
+
 int main(int argc, char** argv) {
+    init_loopback_rt();
+    return 0;
     ma_backend backends[] = { ma_backend_wasapi };
     ma_context context;
     if (ma_context_init(NULL, 0, NULL, &context) != MA_SUCCESS) {

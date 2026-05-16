@@ -17,10 +17,13 @@ add_subdirectory(include/SDL EXCLUDE_FROM_ALL)
 add_library(miniaudio STATIC miniaudio_impl.cpp)
 target_include_directories(miniaudio PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
+
+
 # Create your game executable target as usual
 add_executable(music_visualizer music_visualizer_main.cpp)
+find_package(RtAudio CONFIG REQUIRED)
 target_compile_features(music_visualizer PRIVATE cxx_std_20)
-target_link_libraries(music_visualizer PRIVATE SDL3::SDL3 miniaudio)
+target_link_libraries(music_visualizer PRIVATE SDL3::SDL3 miniaudio RtAudio::rtaudio)
 
 
 # add_executable(wavreader wavreader.cpp)
@@ -28,7 +31,7 @@ target_link_libraries(music_visualizer PRIVATE SDL3::SDL3 miniaudio)
 
 add_executable(test test.cpp)
 target_compile_features(test PRIVATE cxx_std_20)
-target_link_libraries(test PRIVATE miniaudio)
+target_link_libraries(test PRIVATE miniaudio RtAudio::rtaudio)
 
 # add_executable(test_runner test.cpp)
 # target_compile_features(test_runner PRIVATE cxx_std_20)

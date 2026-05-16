@@ -35,7 +35,9 @@
 #include "fft.h"
 #include "parseargs.h"
 #include "miniaudio/miniaudio.h"
+#include <rtaudio/rtaudio.h>
 
+using namespace std;
 
 struct AppState {
     SDL_Window *window;
@@ -624,6 +626,10 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     if (argpath != "loopback") {
         sdl_audio_stream = SDL_CreateAudioStream(&audio_spec, &dst_spec);
         SDL_BindAudioStream(dev, sdl_audio_stream);
+    }
+    else {
+        cout << "NOT A LOOPBACK STREAM, NOT INITIALIZING sdl_audio_stream!!!!!!!" << endl;
+
     }
     // SDL_PutAudioStreamData(sdl_audio_stream,
 

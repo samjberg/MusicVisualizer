@@ -12,7 +12,6 @@
 #include <SDL3/SDL_audio.h>
 
 namespace fs = std::filesystem;
-using namespace std;
 
 
 //Class for creating a stream to read a .wav file.  Only works for output, not input, and only for .wav files currently
@@ -22,7 +21,7 @@ class AudioStream : public IAudioStream {
         AudioStream(fs::path path, uint64_t frames_per_chunk) : IAudioStream(42) {
             this->frames_per_chunk = frames_per_chunk;
             stream_type = file_stream;
-            file = new ifstream(path, ios_base::binary);
+            file = new std::ifstream(path, std::ios_base::binary);
             WaveHeader header = read_header();
             Chunk fmt = read_fmt_chunk();
             num_channels = fmt.num_channels;
@@ -55,7 +54,7 @@ class AudioStream : public IAudioStream {
         }
 
 
-        //Reads the next n bytes into a char* buffer from the underlying ifstream.  This function uses the ifstream's position
+        //Reads the next n bytes into a char* buffer from the underlying std::ifstream.  This function uses the std::ifstream's position
         inline char* next_n_bytes(uint64_t n, int64_t start=-1) {
             if (start == -1) {
                 //we never read more than 16 bytes
@@ -90,25 +89,25 @@ class AudioStream : public IAudioStream {
         inline WaveHeader read_header() {
                 //Read the initial "RIFF" bytes
                 std::string chunk_id = _next_n_bytes(file, 4);
-                // cout << "chunk_id: " << chunk_id << endl;
+                // std::cout << "chunk_id: " << chunk_id << std::endl;
                 uint64_t header_chunk_size = _next_n_bytes_sizet<uint64_t>(file, 4);
-                // cout << "header_chunk_size: " << header_chunk_size << endl;
+                // std::cout << "header_chunk_size: " << header_chunk_size << std::endl;
                 std::string format = _next_n_bytes(file, 4);
-                // cout << "format: " << format << endl;
-                // cout << "at end of read_header, file->tell(): " << file->tellg() << endl;
+                // std::cout << "format: " << format << std::endl;
+                // std::cout << "at end of read_header, file->tell(): " << file->tellg() << std::endl;
                 return WaveHeader{chunk_id, header_chunk_size, format};
         }
 
 
 
         inline uint64_t ff_to_data() {
-            // cout << "Stream pos at beginning of ff_to_data: " << file->tellg() << endl;
+            // std::cout << "Stream pos at beginning of ff_to_data: " << file->tellg() << std::endl;
             std::string word = "data";
             char c[2];
             c[1] = '\0';
             int16_t i = 0;
             while (c[0] != 'd') {
-                // cout << i << endl;
+                // std::cout << i << std::endl;
                 file->read(c, 1);
                 i++;
                 if (i > 1000) {
@@ -167,7 +166,7 @@ class AudioStream : public IAudioStream {
         Frame next_frame() {
             uint64_t curr_frame_idx = pos / bytes_per_frame;
             if (curr_frame_idx >= stored_frames.size()) {
-                vector<double> vals(num_channels);
+                std::vector<double> vals(num_channels);
                 for (int i=0; i<num_channels; ++i) {
                     vals[i] = read_as_normalized_double();
                 }
@@ -187,19 +186,19 @@ class AudioStream : public IAudioStream {
             return stored_frames.size() - (pos * bytes_per_frame);
         }
 
-        vector<Frame> next_n_frames(uint64_t n) {
+        std::vector<Frame> next_n_frames(uint64_t n) {
             uint64_t total_bytes = n * bytes_per_frame;
             uint64_t frame_idx = pos / bytes_per_frame;
             uint64_t start_frame_idx = frame_idx;
             uint64_t frames_processed = 0;
             uint64_t start_pos = pos;
-            vector<Frame> next_frames(n);
+            std::vector<Frame> next_frames(n);
 
             if (frame_idx < stored_frames.size()) {
                 uint64_t start_idx = frame_idx;
-                uint64_t stop_idx = min((frame_idx+n)/bytes_per_frame, static_cast<uint64_t>(stored_frames.size()));
+                uint64_t stop_idx = std::min((frame_idx+n)/bytes_per_frame, static_cast<uint64_t>(stored_frames.size()));
                 while (frame_idx < stop_idx) {
-                    cout << "IN IF STATEMENT IN IF STATEMENT IN IF STATEMENT!!!!!" << endl;
+                    std::cout << "IN IF STATEMENT IN IF STATEMENT IN IF STATEMENT!!!!!" << std::endl;
                     next_frames[frame_idx-start_idx] = stored_frames[frame_idx];
                     frame_idx++;
                     pos += bytes_per_frame;
@@ -213,11 +212,11 @@ class AudioStream : public IAudioStream {
             total_bytes = (n-frames_processed) * bytes_per_frame;
             char* buff = next_n_bytes(total_bytes);
             for (int i=0; i<total_bytes; i+=bytes_per_frame) {
-                // cout << "in for loop, frame_idx: " << frame_idx << endl;
-                vector<double> frame_channels(num_channels);
+                // std::cout << "in for loop, frame_idx: " << frame_idx << std::endl;
+                std::vector<double> frame_channels(num_channels);
                 for (int c=0; c<num_channels; ++c) {
                     uint64_t offset = i + (c * bytes_per_sample);
-                    // cout << "offset: " << offset << endl;
+                    // std::cout << "offset: " << offset << std::endl;
                     frame_channels[c] = n_bytes_to_normalized_double(buff + offset, bytes_per_sample);
                 }
                 Frame frame = Frame(num_channels, frame_channels);
@@ -231,14 +230,14 @@ class AudioStream : public IAudioStream {
         }
 
 
-        vector<Frame> read_next_chunk() override {
+        std::vector<Frame> read_next_chunk() override {
             return next_n_frames(frames_per_chunk);
         }
 
-        //Gets a vector of stored Frames from start_idx to end_idx, indices must be in terms of frames (not bytes or samples)
+        //Gets a std::vector of stored Frames from start_idx to end_idx, indices must be in terms of frames (not bytes or samples)
         //For safety, automatically reads the next chunk to further populate stored_frames if necessary to prevent out of bounds error
-        vector<Frame> get_stored_frames_at(uint64_t start_idx, uint64_t end_idx) {
-            vector<Frame> chunk(frames_per_chunk);
+        std::vector<Frame> get_stored_frames_at(uint64_t start_idx, uint64_t end_idx) {
+            std::vector<Frame> chunk(frames_per_chunk);
             uint64_t curr_pos = pos;
             for (uint64_t i=start_idx; i<end_idx; ++i) {
                 if (i >= stored_frames.size()) {
@@ -250,30 +249,30 @@ class AudioStream : public IAudioStream {
         }
 
         //idx is a frame index.  Passing in idx=N means getting the chunk BEGINNING at the Nth frame;
-        span<Frame> get_chunk_at(uint64_t idx) {
-            uint64_t end_idx = min(idx + chunk_size, data_size/bytes_per_frame);
-            return span<Frame>(&stored_frames[idx], end_idx-idx);
+        std::span<Frame> get_chunk_at(uint64_t idx) {
+            uint64_t end_idx = std::min(idx + chunk_size, data_size/bytes_per_frame);
+            return std::span<Frame>(&stored_frames[idx], end_idx-idx);
             // return get_stored_frames_at(idx, end_idx);
         }
 
 
         //idx is a frame index.  Passing in idx=N means get the chunk CENTERED at the Nth frame.
-        span<Frame> get_chunk_centered_at(uint64_t idx) {
+        std::span<Frame> get_chunk_centered_at(uint64_t idx) {
             // uint64_t start_idx = max(idx - (frames_per_chunk / 2), static_cast<uint64_t>(0));
             uint64_t start_idx = (idx > (frames_per_chunk / 2)) ? (idx - (frames_per_chunk / 2)) : 0;
-            uint64_t end_idx = min(start_idx + frames_per_chunk, static_cast<uint64_t>(stored_frames.size()));
-            return span<Frame>(&stored_frames[start_idx], end_idx - start_idx);
-            // // cout << "chunk centered at: " << idx << " starts at: " << start_idx << " and ends at: " << end_idx << endl;
-            // vector<Frame> chunk(frames_per_chunk);
+            uint64_t end_idx = std::min(start_idx + frames_per_chunk, static_cast<uint64_t>(stored_frames.size()));
+            return std::span<Frame>(&stored_frames[start_idx], end_idx - start_idx);
+            // // std::cout << "chunk centered at: " << idx << " starts at: " << start_idx << " and ends at: " << end_idx << std::endl;
+            // std::vector<Frame> chunk(frames_per_chunk);
             // for (int i=start_idx; i<end_idx; ++i) {
             //     chunk[i-start_idx] = stored_frames[i];
             // }
             // return chunk;
         }
 
-        vector<Frame> next_display_chunk() override {
-            vector<Frame> vec_chunk;
-            span<Frame> span_chunk = get_chunk_centered_at(current_playhead);
+        std::vector<Frame> next_display_chunk() override {
+            std::vector<Frame> vec_chunk;
+            std::span<Frame> span_chunk = get_chunk_centered_at(current_playhead);
             vec_chunk.assign(span_chunk.begin(), span_chunk.end());
             return vec_chunk;
             // return get_chunk_centered_at(current_playhead);
@@ -287,63 +286,63 @@ class AudioStream : public IAudioStream {
 
         void seek(int64_t n) {
 
-            cout << "[seek] enter n=" << n
+            std::cout << "[seek] enter n=" << n
                  << " good=" << file->good()
                  << " eof=" << file->eof()
                  << " fail=" << file->fail()
                  << " bad=" << file->bad()
-                 << endl;
+                 << std::endl;
             auto before = file->tellg();
-            cout << "[seek] tellg before seek=" << before
+            std::cout << "[seek] tellg before seek=" << before
                  << " good=" << file->good()
                  << " eof=" << file->eof()
                  << " fail=" << file->fail()
                  << " bad=" << file->bad()
-                 << endl;
-            file->seekg(n, ios_base::cur);
+                 << std::endl;
+            file->seekg(n, std::ios_base::cur);
             auto after = file->tellg();
-            cout << "[seek] tellg after seek=" << after
+            std::cout << "[seek] tellg after seek=" << after
                  << " good=" << file->good()
                  << " eof=" << file->eof()
                  << " fail=" << file->fail()
                  << " bad=" << file->bad()
-                 << endl;
+                 << std::endl;
         }
 
         //Seek forward n bytes from current stream pos in file
         void seek_forward(int64_t n) {
-            file->seekg(n, ios_base::cur);
+            file->seekg(n, std::ios_base::cur);
         }
 
         //Seek backwards n bytes from current stream pos in file
         void seek_backwards(int64_t n) {
-            streamoff offset = static_cast<streamoff>(n);
-            file->seekg(-offset, ios_base::cur);
+            std::streamoff offset = static_cast<std::streamoff>(n);
+            file->seekg(-offset, std::ios_base::cur);
         }
 
         void seek_to_pos(int64_t n) {
-            file->seekg(n, ios_base::beg);
+            file->seekg(n, std::ios_base::beg);
         }
 
         //Fast forward the stream by `seconds` seconds
         uint64_t ff_seconds(double seconds) {
             int64_t num_bytes = seconds * sample_rate * bytes_per_frame;
-            cout << "[ff_seconds] byte offset=" << num_bytes << endl;
+            std::cout << "[ff_seconds] byte offset=" << num_bytes << std::endl;
             seek_forward(num_bytes);
             auto after = file->tellg();
-            pos = min(pos + static_cast<uint64_t>(num_bytes), static_cast<uint64_t>(data_size));
+            pos = std::min(pos + static_cast<uint64_t>(num_bytes), static_cast<uint64_t>(data_size));
             return pos;
         }
 
         //Rewind the stream by `seconds` seconds
         uint64_t rewind_seconds(double seconds) {
-            cout << "stored_frames.size(): " << stored_frames.size();
+            std::cout << "stored_frames.size(): " << stored_frames.size();
 
             // auto pos = file->tellg();
             int64_t num_bytes = static_cast<int64_t>(seconds * byte_rate);
             seek(-num_bytes);
             auto after = file->tellg();
-            pos = max(pos - static_cast<uint64_t>(num_bytes), static_cast<uint64_t>(0));
+            pos = std::max(pos - static_cast<uint64_t>(num_bytes), static_cast<uint64_t>(0));
             return pos;
         }
 
@@ -366,7 +365,7 @@ class AudioStream : public IAudioStream {
             return false;
         }
 
-        bool put_audiostream_data(vector<Frame>& chunk) {
+        bool put_audiostream_data(std::vector<Frame>& chunk) {
             float* buff = chunk_to_float32_buff(chunk);
             bool res = SDL_PutAudioStreamData(sdl_audio_stream, buff, chunk.size() * sizeof(float) * num_channels);
             delete[] buff;
