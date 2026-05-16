@@ -524,7 +524,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 
     BarsDisplay *bd;
     // AudioStream audio_stream(fpath, 2048);
-    SDL_AudioStream *sdl_audio_stream;
+    SDL_AudioStream *sdl_audio_stream = nullptr;
 
 
     if (contains<string>(short_flag_names, "c")) {
