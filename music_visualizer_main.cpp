@@ -36,6 +36,8 @@
 #include "parseargs.h"
 #include "miniaudio/miniaudio.h"
 
+using namespace std;
+namespace fs = std::filesystem;
 
 struct AppState {
     SDL_Window *window;
