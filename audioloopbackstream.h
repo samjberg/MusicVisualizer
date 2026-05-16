@@ -20,6 +20,7 @@
 
 class AudioLoopbackStream : public IAudioStream {
     public:
+        RtAudio audio;
         uint64_t total_frames_read;
         uint64_t total_frames_consumed;
 
@@ -29,16 +30,14 @@ class AudioLoopbackStream : public IAudioStream {
             total_frames_consumed = 0;
             this->frames_per_chunk = frames_per_chunk;
             std::cout << "before init\n";
-            init_loopback();
+            init_loopback_rt();
             std::cout << "after init\n";
 
             stream_type = loopback_stream;
             rb_idx = 0;
-
-
         }
 
-
+        
         ~AudioLoopbackStream() {
         }
 
@@ -145,7 +144,7 @@ class AudioLoopbackStream : public IAudioStream {
 
         //idx is a frame index.  Passing in idx=N means getting the chunk BEGINNING at the Nth frame;
         std::span<Frame> get_chunk_at(uint64_t idx) {
-            uint64_t end_idx = std::min(idx + chunk_size, data_size/bytes_per_frame);
+            uint64_t end_idx = std::min<uint64_t>(idx + chunk_size, data_size/bytes_per_frame);
             return std::span<Frame>(&stored_frames[idx], end_idx-idx);
             // return get_stored_frames_at(idx, end_idx);
         }
@@ -155,7 +154,7 @@ class AudioLoopbackStream : public IAudioStream {
         std::span<Frame> get_chunk_centered_at(uint64_t idx) {
             // uint64_t start_idx = max(idx - (frames_per_chunk / 2), static_cast<uint64_t>(0));
             uint64_t start_idx = (idx > (frames_per_chunk / 2)) ? (idx - (frames_per_chunk / 2)) : 0;
-            uint64_t end_idx = std::min(start_idx + frames_per_chunk, static_cast<uint64_t>(stored_frames.size()));
+            uint64_t end_idx = std::min<uint64_t>(start_idx + frames_per_chunk, static_cast<uint64_t>(stored_frames.size()));
             return std::span<Frame>(&stored_frames[start_idx], end_idx - start_idx);
             // // std::cout << "chunk centered at: " << idx << " starts at: " << start_idx << " and ends at: " << end_idx << std::endl;
             // std::vector<Frame> chunk(frames_per_chunk);
@@ -240,7 +239,7 @@ class AudioLoopbackStream : public IAudioStream {
                  << " bad=" << file->bad()
                  << std::endl;
 
-            pos = std::min(pos + static_cast<uint64_t>(num_bytes), static_cast<uint64_t>(data_size));
+            pos = std::min<uint64_t>(pos + static_cast<uint64_t>(num_bytes), static_cast<uint64_t>(data_size));
             return pos;
         }
 
@@ -265,7 +264,7 @@ class AudioLoopbackStream : public IAudioStream {
                  << " fail=" << file->fail()
                  << " bad=" << file->bad()
                  << std::endl;
-            pos = std::max(pos - static_cast<uint64_t>(num_bytes), static_cast<uint64_t>(0));
+            pos = std::max<uint64_t>(pos - static_cast<uint64_t>(num_bytes), static_cast<uint64_t>(0));
             for (int i=0; i<20; ++i) {
                 std::cout << "pos: " << pos << std::endl;
                 std::cout << "audio_stream->pos: " << this->pos << std::endl;
@@ -292,7 +291,6 @@ class AudioLoopbackStream : public IAudioStream {
     private:
         std::fstream *file;
         std::vector<Frame> stored_frames;
-        RtAudio audio;
         ma_pcm_rb ring_buffer;
         ma_device device;
         ma_context context;
@@ -335,6 +333,8 @@ class AudioLoopbackStream : public IAudioStream {
 
         void init_loopback_rt() {
 
+            // RtAudio rtaudio;
+
             std::vector<uint32_t> ids = audio.getDeviceIds();
             unsigned int device_id = audio.getDefaultOutputDevice();
             RtAudio::DeviceInfo info = audio.getDeviceInfo(device_id);
@@ -352,9 +352,31 @@ class AudioLoopbackStream : public IAudioStream {
             errmap[RTAUDIO_DRIVER_ERROR] = "RTAUDIO_DRIVER_ERROR";
             errmap[RTAUDIO_SYSTEM_ERROR] = "RTAUDIO_SYSTEM_ERROR";
             errmap[RTAUDIO_THREAD_ERROR] = "RTAUDIO_THREAD_ERROR";
-            unsigned int sample_rate = info.currentSampleRate;
-            unsigned int num_channels = info.outputChannels;
-            unsigned int bytes_per_frame = 4 * num_channels;
+            std::cout << "device name: " << info.name << std::endl;
+            // sample_rate = static_cast<uint64_t>(info.currentSampleRate);
+            sample_rate = 44100;
+            std::cout << "sample_rate: " << sample_rate << std::endl;
+            num_channels = static_cast<uint64_t>(info.outputChannels);
+            std::cout << "num_channels: " << num_channels << std::endl;
+            bytes_per_frame = 4 * num_channels;
+            bytes_per_sample = bytes_per_frame / num_channels;
+            std::cout << "bytes_per_sample: " << bytes_per_sample;
+            bits_per_frame = bytes_per_frame * 8;
+            bits_per_sample = bytes_per_sample * 8;
+            // sample_rate = config.sampleRate;
+            // sample_rate = 44100;
+            std::cout << "sample_rate: " << sample_rate << std::endl;
+            byte_rate = sample_rate * bytes_per_frame;
+            chunk_size = frames_per_chunk * bytes_per_frame;
+            uint64_t normalization_divisor = 2 << (bits_per_sample - 2);
+            normalization_multiplier = 1 / static_cast<double>(normalization_divisor);
+            // data_size = 1024 * 1024 * 20;
+            data_size = frames_per_chunk * 4;
+            stored_frames.reserve(data_size);
+
+
+
+
             RtAudio::StreamParameters parameters;
             parameters.deviceId = device_id;
             parameters.nChannels = num_channels;
@@ -363,13 +385,16 @@ class AudioLoopbackStream : public IAudioStream {
 
             // RtAudioErrorType e;
 
-            RtAudioErrorType e = audio.openStream(&parameters, NULL, RTAUDIO_FLOAT32, static_cast<unsigned int>(sample_rate), &buffer_frames, data_callback_rt, this);
+            RtAudioErrorType e = audio.openStream(NULL, &parameters, RTAUDIO_FLOAT32, static_cast<unsigned int>(sample_rate), &buffer_frames, data_callback_rt, this);
+
 
             if (e != RTAUDIO_NO_ERROR) {
                 std::cout << "ERROR: " << e << std::endl;
 
             }
 
+            audio.startStream();
+            std::cout << "started stream sample rate: " << audio.getStreamSampleRate() << std::endl;
             std::cout << "Using audio output source: " << info.name << std::endl;
 
 

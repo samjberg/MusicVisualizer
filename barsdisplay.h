@@ -127,7 +127,7 @@ class BarsDisplay {
                 float new_height = bars[i].target_height >= bars[i].height ? 
                     std::lerp(bars[i].height, bars[i].target_height, rising_speed * elapsed_seconds) :
                     std::lerp(bars[i].height, bars[i].target_height, falling_speed * elapsed_seconds);
-                bars[i].height = new_height;
+                bars[i].height = std::clamp(new_height, 0.0f, 1.0f);
 
             }
         }

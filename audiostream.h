@@ -11,14 +11,13 @@
 #include "frame.h"
 #include <SDL3/SDL_audio.h>
 
-namespace fs = std::filesystem;
 
 
 //Class for creating a stream to read a .wav file.  Only works for output, not input, and only for .wav files currently
 //Does work with all bit depths, sample rates, number of channels, etc
 class AudioStream : public IAudioStream {
     public:
-        AudioStream(fs::path path, uint64_t frames_per_chunk) : IAudioStream(42) {
+        AudioStream(std::filesystem::path path, uint64_t frames_per_chunk) : IAudioStream(42) {
             this->frames_per_chunk = frames_per_chunk;
             stream_type = file_stream;
             file = new std::ifstream(path, std::ios_base::binary);

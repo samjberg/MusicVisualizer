@@ -35,9 +35,9 @@
 #include "fft.h"
 #include "parseargs.h"
 #include "miniaudio/miniaudio.h"
-#include <rtaudio/rtaudio.h>
 
 using namespace std;
+namespace fs = std::filesystem;
 
 struct AppState {
     SDL_Window *window;
@@ -524,7 +524,7 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
 
     BarsDisplay *bd;
     // AudioStream audio_stream(fpath, 2048);
-    SDL_AudioStream *sdl_audio_stream;
+    SDL_AudioStream *sdl_audio_stream = nullptr;
 
 
     if (contains<string>(short_flag_names, "c")) {
@@ -617,19 +617,19 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     }
 
 
-    SDL_AudioSpec dst_spec;
-    // audio_stream->next_frame();
-    SDL_GetAudioDeviceFormat(dev, &dst_spec, NULL);
-    SDL_AudioFormat audio_format = SDL_AUDIO_F32;
-    int num_channels = audio_stream->num_channels;
-    SDL_AudioSpec audio_spec{audio_format, num_channels, static_cast<int>(sample_rate)};
     if (argpath != "loopback") {
+        SDL_AudioSpec dst_spec;
+        // audio_stream->next_frame();
+        SDL_GetAudioDeviceFormat(dev, &dst_spec, NULL);
+        SDL_AudioFormat audio_format = SDL_AUDIO_F32;
+        int num_channels = audio_stream->num_channels;
+        SDL_AudioSpec audio_spec{audio_format, num_channels, static_cast<int>(sample_rate)};
         sdl_audio_stream = SDL_CreateAudioStream(&audio_spec, &dst_spec);
         SDL_BindAudioStream(dev, sdl_audio_stream);
-    }
-    else {
-        cout << "NOT A LOOPBACK STREAM, NOT INITIALIZING sdl_audio_stream!!!!!!!" << endl;
 
+        cout << "dst channels: " << dst_spec.channels << endl;
+        cout << "dst sample rate: " << dst_spec.freq << endl;
+        cout << "dst format: " << dst_spec.format << endl;
     }
     // SDL_PutAudioStreamData(sdl_audio_stream,
 
@@ -677,12 +677,9 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     // bd = gradient_style == "horizontal" ? BarsDisplay(screen_info, bars) : BarsDisplay(screen_info, bars, GradientInfo{GREEN, RED, static_cast<uint64_t>(screen_info.screen_size.y)});
     bd->lerp_t = lerp_t;
     bd->update_heights(normed_bins);
+    cout << "actual number of bins: " << bins.size() << endl;
     
 
-    cout << "actual number of bins: " << bins.size() << endl;
-    cout << "dst channels: " << dst_spec.channels << endl;
-    cout << "dst sample rate: " << dst_spec.freq << endl;
-    cout << "dst format: " << dst_spec.format << endl;
 
 
     if (audio_stream->stream_type == file_stream) {
@@ -696,6 +693,8 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
         return SDL_APP_FAILURE;
 
     }
+
+    cout << "max_queued_bytes: " << max_queued_bytes << endl;
 
     *appstate = new AppState({window, renderer, actual_screen_width, actual_screen_height, std::move(audio_stream), sdl_audio_stream, bd, 
                             sample_rate, freq_min, freq_max, global_max, global_min, max_queued_bytes, total_frames_sent, current_playhead,
@@ -723,12 +722,11 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
     if (event->type == SDL_EVENT_KEY_DOWN) {
         AppState *as = (AppState*)appstate;
         // as->audio_stream->next_n_frames(5);
-        SDL_AudioStream *sdl_audio_stream = as->sdl_audio_stream;
         cout << "sample_rate: " << as->sample_rate << endl;
         if (event->key.key == 'q') {
             cout << "bytes_per_frame: " << as->audio_stream->bytes_per_frame;
             if (as->audio_stream->stream_type == file_stream) {
-                SDL_UnbindAudioStream(sdl_audio_stream);
+                SDL_UnbindAudioStream(as->sdl_audio_stream);
             }
             cout << "sample_rate: " << as->sample_rate << endl;
             return SDL_APP_SUCCESS;
@@ -739,7 +737,7 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
         else if (event->key.scancode == SDL_SCANCODE_LEFT) {
             //User hit left arrow key, rewind stream 5 seconds
             if (as->audio_stream->stream_type == file_stream) {
-                SDL_ClearAudioStream(sdl_audio_stream);
+                SDL_ClearAudioStream(as->sdl_audio_stream);
                 AudioStream *audio_stream = dynamic_cast<AudioStream*>(as->audio_stream.get());
                 audio_stream->rewind_seconds(2.5);
             }
@@ -749,7 +747,7 @@ SDL_AppResult SDL_AppEvent(void *appstate, SDL_Event *event)
         else if (event->key.scancode == SDL_SCANCODE_RIGHT) {
             //User hit left arrow key, rewind stream 5 seconds
             if (as->audio_stream->stream_type == file_stream) {
-                SDL_ClearAudioStream(sdl_audio_stream);
+                SDL_ClearAudioStream(as->sdl_audio_stream);
                 AudioStream *audio_stream = dynamic_cast<AudioStream*>(as->audio_stream.get());
                 audio_stream->ff_seconds(2.5);
             }
@@ -777,7 +775,6 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     AppState* as = (AppState*)appstate;
     // AudioStream *audio_stream = as->audio_stream;
-    SDL_AudioStream *sdl_audio_stream = as->sdl_audio_stream;
     BarsDisplay *bd = as->bd;
     SDL_Renderer *renderer = as->renderer;
     int actual_screen_width = as->actual_screen_width;
@@ -790,6 +787,19 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     uint64_t prev_ticks = as->prev_ticks;
 
 
+    if (as->audio_stream->stream_type == loopback_stream) {
+        AudioLoopbackStream *als = dynamic_cast<AudioLoopbackStream*>(as->audio_stream.get());
+        if (als->audio.isStreamRunning()) {
+            cout << "STREAM IS RUNNING" << endl;
+        }
+        else {
+            cout << "stream is NOT running" << endl;
+        }
+    }
+    else {
+        cout << "NOT A LOOPBACK STREAM (SOMEHOW)!!!!!!!" << endl;
+
+    }
 
 
     const char *message = "Hello World!";
@@ -810,6 +820,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
 
     if (as->playing) {
         if (as->audio_stream->stream_type == file_stream) {
+            SDL_AudioStream *sdl_audio_stream = as->sdl_audio_stream;
             if (SDL_AudioStreamDevicePaused(sdl_audio_stream)) {
                 SDL_ResumeAudioStreamDevice(sdl_audio_stream);
             }
@@ -859,7 +870,7 @@ SDL_AppResult SDL_AppIterate(void *appstate)
     }
     else if (as->audio_stream->stream_type == file_stream) {
         // else {
-        SDL_PauseAudioStreamDevice(sdl_audio_stream);
+        SDL_PauseAudioStreamDevice(as->sdl_audio_stream);
         // }
 
     }
