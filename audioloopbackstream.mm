@@ -1,4 +1,26 @@
 
+
+
+//objective-c imports
+/* #import <Foundation/Foundation.h> */
+#import <CoreAudio/CoreAudio.h>
+#import <CoreAudio/AudioHardwareTapping.h>
+#import <CoreAudio/CATapDescription.h>
+#import <CoreMedia/CoreMedia.h>
+#import <CoreMedia/CMSampleBuffer.h>
+#import <ScreenCaptureKit/ScreenCaptureKit.h>
+#import <uuid/uuid.h>
+#include <Security/Security.h>
+
+#ifdef __APPLE__
+    #define Size MacTypes_Size;
+    #define Rect MacTypes_Rect;
+    #define Pos  MacTypes_Pos;
+#endif
+
+#include "iaudiostream.h"
+#include "audioloopbackstream.h"
+//c++ includes
 #include <iostream>
 #include <vector>
 #include <span>
@@ -6,8 +28,115 @@
 #include <fstream>
 #include "frame.h"
 #include <miniaudio/miniaudio.h>
-#include "iaudiostream.h"
-#include "audioloopbackstream.h"
+
+
+SCStream *stream = nil;
+
+@interface AudioBufferReceiver : NSObject <SCStreamOutput> {
+    AudioLoopbackStream *inst;
+
+}
+- (instancetype)initWithCppInstance:(AudioLoopbackStream *)cpp_instance;
+@end
+
+@implementation AudioBufferReceiver
+
+- (instancetype)initWithCppInstance:(AudioLoopbackStream *)cpp_instance {
+    self = [super init];
+    if (self) {
+        inst = cpp_instance;
+    }
+    return self;
+}
+
+- (void)stream:(SCStream *)stream didOutputSampleBuffer:(CMSampleBufferRef)sampleBuffer ofType:(SCStreamOutputType)type {
+    if (type == SCStreamOutputTypeAudio) {
+        
+        // 1. Determine the total frame sample count inside this buffer chunk
+        CMItemCount numSamples = CMSampleBufferGetNumSamples(sampleBuffer);
+        if (numSamples == 0) return;
+
+        // 2. Allocate stack storage for a 2-channel AudioBufferList mapping
+        char bufferListStorage[sizeof(AudioBufferList) + sizeof(AudioBuffer)];
+        AudioBufferList *bufferList = (AudioBufferList *)bufferListStorage;
+        CMBlockBufferRef blockBuffer = nullptr;
+
+        // 3. Populate our structure with pointers to the underlying audio frames
+        OSStatus status = CMSampleBufferGetAudioBufferListWithRetainedBlockBuffer(
+            sampleBuffer,
+            nullptr,
+            bufferList,
+            sizeof(bufferListStorage),
+            nullptr,
+            nullptr,
+            kCMSampleBufferFlag_AudioBufferList_Assure16ByteAlignment,
+            &blockBuffer
+        );
+
+        if (status == noErr) {
+            // 4. Cast the raw pointers directly to standard C++ float arrays
+            // mBuffers[0] handles Left channel samples; mBuffers[1] handles Right channel samples
+            float *leftChannel  = (float *)bufferList->mBuffers[0].mData;
+            float *rightChannel = (float *)bufferList->mBuffers[1].mData;
+
+            // 5. Instantiate your flat sequential processing target vector
+            /* std::vector<float> interleavedData(numSamples * 2); */
+            float *float_buff = new float[numSamples * 2];
+            ma_uint32 frames_to_write = numSamples;
+
+            // 6. Transpose the planar tracks into your expected [L, R, L, R...] configuration
+            for (CMItemCount i = 0; i < numSamples; ++i) {
+                /* interleavedData[i * 2]     = leftChannel[i]; */
+                /* interleavedData[i * 2 + 1] = rightChannel[i]; */
+                float_buff[i * 2]     = leftChannel[i];
+                float_buff[i * 2 + 1] = rightChannel[i];
+                /* std::cout << leftChannel[i] << "\t" << rightChannel[i] << std::endl; */
+                /* inst->ring_buffer */
+            }
+
+            const float *buff = (const float*)float_buff;
+            ma_uint32 frame_count = numSamples;
+            std::vector<float> samples;
+            std::vector<Frame> frames(frame_count);
+            void *write_buffer;
+            ma_pcm_rb_acquire_write(&(inst->ring_buffer), &frames_to_write, &write_buffer);
+            memcpy(write_buffer, buff, frames_to_write * static_cast<ma_uint32>(inst->bytes_per_frame));
+            ma_pcm_rb_commit_write(&(inst->ring_buffer), frames_to_write);
+            inst->total_frames_read += frames_to_write;
+            ma_uint32 offset = frames_to_write * inst->num_channels;
+            ma_uint32 remaining_frames = frame_count - frames_to_write;
+            if (remaining_frames > 0) {
+                void *write_buffer;
+                ma_uint32 frames_to_write = remaining_frames;
+                ma_pcm_rb_acquire_write(&(inst->ring_buffer), &frames_to_write, &write_buffer);
+                memcpy(write_buffer, buff+offset, frames_to_write * static_cast<ma_uint32>(inst->bytes_per_frame));
+                ma_pcm_rb_commit_write(&(inst->ring_buffer), frames_to_write);
+                inst->total_frames_read += frames_to_write;
+            }
+
+
+
+
+
+
+
+            /* ins */
+
+            // --- PASSTHROUGH BOUNDARY ---
+            // The data inside interleavedData is now packed perfectly. 
+            // You can pass raw memory access pointers (&interleavedData[0]) directly
+            // into your existing visualization or FFT processing structures here.
+        }
+
+        // 7. CoreMedia memory stewardship requirement
+        if (blockBuffer) {
+            CFRelease(blockBuffer);
+        }
+    }
+}
+@end
+
+
 
 
 //Class for creating a stream to read a .wav file.  Only works for output, not input, and only for .wav files currently
@@ -327,53 +456,12 @@ uint64_t AudioLoopbackStream::total_frames_available() {
 
 void AudioLoopbackStream::init_loopback() {
 
-    ma_backend backends[] = { ma_backend_wasapi };
-    if (ma_context_init(NULL, 0, NULL, &context) != MA_SUCCESS) {
-        std::cout << "Error 1\n";
-        // Error.
-    }
-    ma_device_info* pPlaybackInfos;
-    ma_uint32 playbackCount;
-    ma_device_info* pCaptureInfos;
-    ma_uint32 captureCount;
-    // ma_get_ch
-    if (ma_context_get_devices(&context, &pPlaybackInfos, &playbackCount, &pCaptureInfos, &captureCount) != MA_SUCCESS) {
-        std::cout << "error 2\n";
-        // Error.
-    }
-
-    for (int i=0; i<captureCount; ++i) {
-        std::cout << "Capture Device " << i << ": " << pCaptureInfos[i].name << std::endl;
-    }
-
-    for (int i=0; i<playbackCount; ++i) {
-        std::cout << "Playback Device " << i << ": " << pPlaybackInfos[i].name << std::endl;
-    }
-
-    ma_device_config config = ma_device_config_init(ma_device_type_loopback);
-    config.capture.pDeviceID = &pPlaybackInfos[0].id;
-    num_channels = config.playback.channels;
-    config.capture.format = ma_format_f32;
-    config.capture.channels = 2;
-    config.sampleRate = 44100;
-    config.dataCallback = data_callback;
-
-
-
-
-
-    // ma_device device;
-    ma_result dev_init_res = ma_device_init(&context, &config, &device);
-    for (int i=0; i<10; ++i) {
-        std::cout << "device init result!!!!!!!!!!!!!!!!!!!!!!!!:   " << dev_init_res;
-    }
-    num_channels = device.capture.channels;
-    sample_rate = device.capture.internalSampleRate;
+    //Initialize class variables
+    num_channels = 2;
+    sample_rate = 48000;
     std::cout << "num_channels: " << num_channels << std::endl;
 
-    num_channels = 2;
-    // std::cout << "num_
-    // bytes_per_frame = ma_get_bytes_per_frame(ma_format_f32, num_channels);
+    /*--------------------------------------------------*/
     bytes_per_frame = ma_get_bytes_per_frame(ma_format_f32, num_channels);
     std::cout << "bytes_per_frame: " << bytes_per_frame;
     bytes_per_sample = bytes_per_frame / num_channels;
@@ -390,19 +478,92 @@ void AudioLoopbackStream::init_loopback() {
     // data_size = 1024 * 1024 * 20;
     data_size = frames_per_chunk * 4;
     stored_frames.reserve(data_size);
-
-    std::cout << "device.capture.format: " << device.capture.format << std::endl;
-    std::cout << "num_channels: " << num_channels << std::endl;
-    // std::cout << "frames_per_chunk
+    /*--------------------------------------------------*/
 
 
-    auto res = ma_pcm_rb_init(device.capture.format, static_cast<ma_uint32>(num_channels), static_cast<ma_uint32>(frames_per_chunk * 5), NULL, NULL, &ring_buffer);
+    auto res = ma_pcm_rb_init(ma_format_f32, static_cast<ma_uint32>(num_channels), static_cast<ma_uint32>(frames_per_chunk * 5), NULL, NULL, &ring_buffer);
     std::cout << "ma_pcm_rb_init result: " << res << std::endl;
 
-    device.pUserData = this;
 
-    auto dev_res = ma_device_start(&device);
-    std::cout << "dev start result: " << dev_res << std::endl;
+    // Objective-C memory management scope
+    @autoreleasepool {
+        std::cout << "Starting ScreenCaptureKitTest Build Verification..." << std::endl;
+
+        AudioObjectID aggDeviceID;
+        AudioDeviceIOProcID adiopid;
+        std::cout << "Requesting available screen/audio content from macOS..." << std::endl;
+        SCStreamConfiguration *conf = [[SCStreamConfiguration alloc] init];
+        conf.capturesAudio = YES;
+        conf.captureMicrophone = NO;
+        conf.excludesCurrentProcessAudio = YES;
+        conf.minimumFrameInterval = CMTime{10, 1};
+        conf.channelCount = 2;
+        conf.sampleRate = 48000;
+
+        AudioBufferReceiver *receiver = [[AudioBufferReceiver alloc] initWithCppInstance:this];
+
+        dispatch_queue_t audioProcessingQueue = dispatch_queue_create("com.sam.AudioCaptureQueue", DISPATCH_QUEUE_SERIAL);
+
+
+        // This is a standard asynchronous call in ScreenCaptureKit
+        [SCShareableContent getShareableContentWithCompletionHandler:^(SCShareableContent *content, NSError *error) {
+            if (error) {
+                std::cout << "Error retrieving content: " << error.localizedDescription.UTF8String << std::endl;
+            } else {
+                std::cout << "Successfully connected to ScreenCaptureKit!" << std::endl;
+                /* content.displays; */
+                NSArray<SCDisplay*> *displays =  content.displays;
+                SCContentFilter *filter = [[SCContentFilter alloc] initWithDisplay:displays[0] excludingApplications:@[] exceptingWindows:@[]];
+                stream = [[SCStream alloc] initWithFilter:filter configuration:conf delegate:NULL];
+
+                NSError *outputError = nil;
+                [stream addStreamOutput:receiver type:SCStreamOutputTypeAudio sampleHandlerQueue:audioProcessingQueue error:&outputError];
+                if (outputError) {
+                    std::cout << "Failed to attach audio output destination: " << outputError.localizedDescription.UTF8String << std::endl;
+
+                }
+                /* [stream addStreamOutput:(nonnull id<SCStreamOutput>) type:(SCStreamOutputType) sampleHandlerQueue:(dispatch_queue_t _Nullable) error:(NSError * _Nullable * _Nullable) */
+                /* [stream startCaptureWithCompletionHandler:NULL] */
+                /* stream->startCapture; */
+                /* stream.addStream */
+                NSUInteger count = [displays count];
+                std::cout << "Number of displays: " << count << std::endl;
+                for (SCDisplay *disp in displays) {
+                    uint32_t displayID = [disp displayID];
+                    std::cout << "displayID: " << displayID << std::endl;
+                    NSArray<NSString*> *attribute_keys = [disp attributeKeys];
+                }
+
+
+                [stream startCaptureWithCompletionHandler:^(NSError *error) {
+                    if (error) {
+                        std::cout << "Failed to initiate stream capture: " << error.localizedDescription.UTF8String << std::endl;
+
+                    }
+                    else {
+                        std::cout << "ScreenCaptureKit pipeline is actively recording loopback audio!" << std::endl;
+                    }
+
+                }];
+            }
+        }];
+
+        // Keep the command line app alive briefly to allow the async call to respond
+        [NSThread sleepForTimeInterval:4.0];
+    }
+
+    
+    
+    std::cout << "num_channels: " << num_channels << std::endl;
+    // std::cout << "frames_per_chunk
+    //
+
+    /* ma_format_f32 */
+
+
+
+    /* device.pUserData = this; */
+
 
 
 }
@@ -521,5 +682,4 @@ void data_callback(struct ma_device *device, void *output_buff, const void *inpu
 }
 
 // };
-
 

@@ -60,9 +60,11 @@ class AudioLoopbackStream : public IAudioStream {
     private:
         std::fstream *file;
         std::vector<Frame> stored_frames;
+        uint64_t rb_idx;
+#ifdef _WIN32
         ma_device device;
         ma_context context;
-        uint64_t rb_idx;
+#endif
 
 
 

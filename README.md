@@ -4,7 +4,8 @@
 
 This is just a hobby project I made/am making (currently am making unless I just forget to update this README).  It's just a standard music (audio) visualizer, with everything that entails, including a .wav file reader.  It is being developed on Windows using MinGW, CMake for the build system with Ninja as the generator (necessary to generate compile\_commands.json, which is necessary for my development setup)
 
-I was going to write that there is a problem where it only works on Windows and does not work on MacOS (and so likely other unix-like systems), however I just fixed those issues, and it is running fine on MacOS.
+Currently only Windows and MacOS are supported.  Windows uses the miniaudio library for audio capture (link to repo at bottom of this README), MacOS uses ScreenCaptureKit.
+Because of Apple (you know what I mean), explicitly permissions are required to run this on MacOS for Screen Capture, because currently ScreenCaptureKit is the only way to reliably capture loopback audio.  So you have to agree to Screen Capture permissions, but the code does not actually use any screen information at all, only audio.
 
 
 

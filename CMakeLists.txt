@@ -20,10 +20,34 @@ add_subdirectory(include/SDL EXCLUDE_FROM_ALL)
 add_library(miniaudio STATIC miniaudio_impl.cpp)
 target_include_directories(miniaudio PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/include")
 
+	
+
 # Create your game executable target as usual
 add_executable(music_visualizer music_visualizer_main.cpp)
 target_compile_features(music_visualizer PRIVATE cxx_std_20)
 target_link_libraries(music_visualizer PRIVATE SDL3::SDL3 miniaudio)
+
+if(APPLE) 
+	find_library(SCREEN_CAPTURE_KIT ScreenCaptureKit REQUIRED)
+	find_library(FOUNDATION Foundation REQUIRED)
+	find_library(COREMEDIA CoreMedia REQUIRED)
+	find_library(COREAUDIO CoreAudio REQUIRED)
+	
+	target_sources(music_visualizer PRIVATE audioloopbackstream.mm)
+	target_link_libraries(music_visualizer PRIVATE
+	    ${SCREEN_CAPTURE_KIT}
+	    ${FOUNDATION}
+	    ${COREMEDIA}
+	    ${COREAUDIO}
+	)
+
+elseif(WIN32)
+	target_sources(music_visualizer PRIVATE audioloopbackstream.cpp)
+
+endif()
+
+
+
 
 
 # add_executable(wavreader wavreader.cpp)

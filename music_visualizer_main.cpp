@@ -18,9 +18,6 @@
 #include "SDL3/SDL_render.h"
 #include <SDL3/SDL_audio.h>
 #include "SDL3/SDL_scancode.h"
-#include "audiostream.h"
-#include "audioloopbackstream.cpp"
-#include "iaudiostream.h"
 #include <complex>
 #include <filesystem>
 #include <memory>
@@ -35,6 +32,10 @@
 #include "fft.h"
 #include "parseargs.h"
 #include "miniaudio/miniaudio.h"
+#include "iaudiostream.h"
+#include "audiostream.h"
+#include "audioloopbackstream.h"
+
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -562,12 +563,23 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     // audio_stream = make_unique<AudioStream>(cwd/argpath, frames_per_chunk);
     // AudioStream *audio_stream = new AudioStream(cwd/argpath, frames_per_chunk);
 
+    cout << "Frames per chunk: " << frames_per_chunk << endl;
     unique_ptr<IAudioStream> audio_stream;
     if ((argpath == ".") || (argpath == "loopback") || (argpath == "live")) {
         audio_stream = make_unique<AudioLoopbackStream>(frames_per_chunk);
     }
     else {
-        audio_stream = make_unique<AudioStream>(cwd/argpath, frames_per_chunk);
+        try {
+            audio_stream = make_unique<AudioStream>(cwd/argpath, frames_per_chunk);
+        }
+        catch (std::exception e) {
+            cout << e.what() << endl;
+
+
+        }
+
+
+        // audio_stream = make_unique<AudioStream>(cwd/argpath, frames_per_chunk);
         // a->sdl
     }
     sample_rate = audio_stream->sample_rate;
