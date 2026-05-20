@@ -3,7 +3,28 @@
 # CompileFlags:
 #   Add: [-xc++-header, -std=c++20]
 
+# If:
+#   PathMatch: .*\.h
+# CompileFlags:
+#   Add: [-xc++-header, -std=c++20, -x, objective-c++]
+#
+
+# Block 1: Global baseline settings for all C++ and Objective-C++ translation streams
+CompileFlags:
+  Add: [-std=c++20]
+
+---
+
+# Block 2: Specific overrides strictly for processing implementation .mm files
+If:
+  PathMatch: .*\.mm
+CompileFlags:
+  Add: [-x, objective-c++]
+
+---
+
+# Block 3: Specific overrides strictly for processing tracking header files
 If:
   PathMatch: .*\.h
 CompileFlags:
-  Add: [-xc++-header, -std=c++20]
+  Add: [-xc++-header]

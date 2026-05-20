@@ -18,9 +18,6 @@
 #include "SDL3/SDL_render.h"
 #include <SDL3/SDL_audio.h>
 #include "SDL3/SDL_scancode.h"
-#include "audiostream.h"
-#include "audioloopbackstream.h"
-#include "iaudiostream.h"
 #include <complex>
 #include <filesystem>
 #include <memory>
@@ -35,6 +32,10 @@
 #include "fft.h"
 #include "parseargs.h"
 #include "miniaudio/miniaudio.h"
+#include "iaudiostream.h"
+#include "audiostream.h"
+#include "audioloopbackstream.h"
+
 
 using namespace std;
 namespace fs = std::filesystem;
@@ -59,11 +60,6 @@ struct AppState {
     uint64_t prev_ticks;
     bool playing;
 };
-
-
-void data_callback(struct ma_device *device, void *output_buff, const void *input_buff, unsigned int frame_count) {
-    std::cout << "RECEIVED: " << frame_count << " FRAMES OF DATA!!!" << std::endl;
-}
 
 
 fs::path fpath = "/Users/sjber/Coding/C++/SDL_Projects/MusicVisualizer/cliffsofdover.wav";
@@ -424,38 +420,7 @@ bool put_audiostream_data(vector<Frame>& chunk, SDL_AudioStream *sdl_audio_strea
     return res;
 }
 
-inline void testfunc() {
-    ma_context context;
-    if (ma_context_init(NULL, 0, NULL, &context) != MA_SUCCESS) {
-        // Error.
-    }
-    ma_device_info* pPlaybackInfos;
-    ma_uint32 playbackCount;
-    ma_device_info* pCaptureInfos;
-    ma_uint32 captureCount;
-    if (ma_context_get_devices(&context, &pPlaybackInfos, &playbackCount, &pCaptureInfos, &captureCount) != MA_SUCCESS) {
-        // Error.
-    }
 
-    for (int i=0; i<captureCount; ++i) {
-        std::cout << "Capture Device " << i << ": " << pCaptureInfos[i].name << std::endl;
-    }
-
-    for (int i=0; i<playbackCount; ++i) {
-        std::cout << "Playback Device " << i << ": " << pPlaybackInfos[i].name << std::endl;
-    }
-
-    ma_device_id *pid;
-    ma_device_config config = ma_device_config_init(ma_device_type_loopback);
-    config.capture.pDeviceID = NULL;
-    config.capture.format = ma_format_f32;
-    config.capture.channels = 2;
-    config.sampleRate = 44100;
-    config.dataCallback = data_callback;
-
-
-
-}
 
 
 /* This function runs once at startup. */
@@ -598,12 +563,23 @@ SDL_AppResult SDL_AppInit(void **appstate, int argc, char *argv[])
     // audio_stream = make_unique<AudioStream>(cwd/argpath, frames_per_chunk);
     // AudioStream *audio_stream = new AudioStream(cwd/argpath, frames_per_chunk);
 
+    cout << "Frames per chunk: " << frames_per_chunk << endl;
     unique_ptr<IAudioStream> audio_stream;
     if ((argpath == ".") || (argpath == "loopback") || (argpath == "live")) {
         audio_stream = make_unique<AudioLoopbackStream>(frames_per_chunk);
     }
     else {
-        audio_stream = make_unique<AudioStream>(cwd/argpath, frames_per_chunk);
+        try {
+            audio_stream = make_unique<AudioStream>(cwd/argpath, frames_per_chunk);
+        }
+        catch (std::exception e) {
+            cout << e.what() << endl;
+
+
+        }
+
+
+        // audio_stream = make_unique<AudioStream>(cwd/argpath, frames_per_chunk);
         // a->sdl
     }
     sample_rate = audio_stream->sample_rate;

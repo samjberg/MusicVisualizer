@@ -18,13 +18,18 @@
 class AudioStream : public IAudioStream {
     public:
         AudioStream(std::filesystem::path path, uint64_t frames_per_chunk) : IAudioStream(42) {
+            std::cout << "Loading file from path: " << path << std::endl;
             this->frames_per_chunk = frames_per_chunk;
             stream_type = file_stream;
             file = new std::ifstream(path, std::ios_base::binary);
+            std::cout << "before read_header" << std::endl;
             WaveHeader header = read_header();
+            std::cout << "before read fmt chunk: " << std::endl;
             Chunk fmt = read_fmt_chunk();
             num_channels = fmt.num_channels;
+            std::cout << "num_channels: " << num_channels << std::endl;
             sample_rate = fmt.sample_rate;
+            std::cout << "sample_rate: " << sample_rate << std::endl;
             byte_rate = fmt.byte_rate;
             block_align = fmt.block_align;
             bits_per_sample = fmt.bits_per_sample;
@@ -32,7 +37,9 @@ class AudioStream : public IAudioStream {
             bits_per_frame = bits_per_sample * num_channels;
             bytes_per_frame = bits_per_frame / 8;
             chunk_size = frames_per_chunk * bytes_per_frame;
+            std::cout << "chunk_size: " << chunk_size << std::endl;
             data_size = ff_to_data();
+            std::cout << "data_size: " << data_size << std::endl;
             pos = static_cast<uint64_t>(file->tellg());
             uint64_t normalization_divisor = 2 << (bits_per_sample - 2);
             normalization_multiplier = 1 / static_cast<double>(normalization_divisor);
@@ -54,7 +61,7 @@ class AudioStream : public IAudioStream {
 
 
         //Reads the next n bytes into a char* buffer from the underlying std::ifstream.  This function uses the std::ifstream's position
-        inline char* next_n_bytes(uint64_t n, int64_t start=-1) {
+        char* next_n_bytes(uint64_t n, int64_t start=-1) {
             if (start == -1) {
                 //we never read more than 16 bytes
                 char *buff = new char[n+1];
@@ -71,7 +78,7 @@ class AudioStream : public IAudioStream {
         }
 
 
-        inline Chunk read_fmt_chunk() {
+        Chunk read_fmt_chunk() {
             std::string chunk_id_var = _next_n_bytes(file, 4);
             uint64_t chunk_size_var = _next_n_bytes_sizet<uint64_t>(file, 4, true);
             uint64_t format_var = _next_n_bytes_sizet<uint64_t>(file, 2);
@@ -85,7 +92,7 @@ class AudioStream : public IAudioStream {
 
 
 
-        inline WaveHeader read_header() {
+        WaveHeader read_header() {
                 //Read the initial "RIFF" bytes
                 std::string chunk_id = _next_n_bytes(file, 4);
                 // std::cout << "chunk_id: " << chunk_id << std::endl;
@@ -99,14 +106,14 @@ class AudioStream : public IAudioStream {
 
 
 
-        inline uint64_t ff_to_data() {
+        uint64_t ff_to_data() {
             // std::cout << "Stream pos at beginning of ff_to_data: " << file->tellg() << std::endl;
             std::string word = "data";
-            char c[2];
+            char c[2] = {' ', '\0'};
             c[1] = '\0';
             int16_t i = 0;
             while (c[0] != 'd') {
-                // std::cout << i << std::endl;
+                std::cout << i << std::endl;
                 file->read(c, 1);
                 i++;
                 if (i > 1000) {

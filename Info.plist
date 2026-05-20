@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- Technical Identification Meta -->
+    <key>CFBundleIdentifier</key>
+    <string>com.sam.MusicVisualizer</string>
+    <key>CFBundleName</key>
+    <string>MusicVisualizer</string>
+    <key>CFBundleExecutable</key>
+    <string>MusicVisualizer</string>
+    <key>CFBundlePackageType</key>
+    <string>APPL</string>
+    <key>CFBundleInfoDictionaryVersion</key>
+    <string>6.0</string>
+    <key>CFBundleDevelopmentRegion</key>
+    <string>en</string>
+    <key>CFBundleShortVersionString</key>
+    <string>1.0</string>
+    <key>CFBundleVersion</key>
+    <string>1</string>
+
+    <!-- Required Security Declarations -->
+    <key>NSAudioCaptureUsageDescription</key>
+    <string>This application requires access to system loopback audio for music visualization processing.</string>
+    <key>NSScreenCaptureUsageDescription</key>
+    <string>ScreenCaptureKit requires screen context initialization to capture the associated system audio tracks.</string>
+</dict>
+</plist>
